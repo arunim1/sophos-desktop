@@ -1,7 +1,7 @@
 import SwiftUI
 import Security
 
-// Local copy of KeychainManager for ContentView
+// KeychainManager for ContentView to store API key for future use
 class KeychainManager {
     static let shared = KeychainManager()
     
@@ -23,10 +23,16 @@ class KeychainManager {
         ]
         
         let status = SecItemAdd(query as CFDictionary, nil)
+        
+        // Also save to UserDefaults as a fallback for testing
+        UserDefaults.standard.set(apiKey, forKey: "anthropic_api_key")
+        print("API key saved to UserDefaults as fallback")
+        
         return status == errSecSuccess
     }
     
     func getAPIKey() -> String? {
+        print("Attempting to get API key from keychain")
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -38,10 +44,21 @@ class KeychainManager {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         
+        print("Keychain query status: \(status)")
+        
         if status == errSecSuccess, let data = result as? Data {
-            return String(data: data, encoding: .utf8)
+            let apiKey = String(data: data, encoding: .utf8)
+            print("API key found in keychain")
+            return apiKey
         }
         
+        // Try UserDefaults as fallback for testing
+        if let fallbackKey = UserDefaults.standard.string(forKey: "anthropic_api_key") {
+            print("Using fallback API key from UserDefaults")
+            return fallbackKey
+        }
+        
+        print("No API key found")
         return nil
     }
     
@@ -92,19 +109,31 @@ struct ContentView: View {
             
             Divider()
             
-            Toggle("Describe images with Claude", isOn: $isDescribingImages)
+            Toggle("Extract text with OCR (Claude API coming soon)", isOn: $isDescribingImages)
                 .padding(.horizontal)
                 .onChange(of: isDescribingImages) { describe in
                     if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
                         appDelegate.screenshotManager.setUseDescriptionAPI(describe)
                     }
                     
-                    if describe && savedAPIKey == nil {
-                        showingAPIKeyField = true
-                    }
+                    // No API key needed for OCR
                 }
             
             if isDescribingImages {
+                // We'll keep the OCR functionality while allowing API key storage
+                HStack {
+                    Image(systemName: "key.fill")
+                        .foregroundColor(savedAPIKey != nil ? .green : .gray)
+                    Text("Anthropic API Key: " + (savedAPIKey != nil ? "Configured ✓" : "Not Set"))
+                        .font(.caption)
+                    Button(savedAPIKey != nil ? "Change" : "Set") {
+                        showingAPIKeyField = true
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+                .padding(.horizontal)
+                
                 if showingAPIKeyField {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Anthropic API Key:")
@@ -116,7 +145,7 @@ struct ContentView: View {
                             .frame(height: 30)
                         #else
                         SecureField("Enter API Key", text: $apiKey)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .textFieldStyle(.roundedBorder)
                         #endif
                         
                         if !apiKeyStatus.isEmpty {
@@ -147,24 +176,8 @@ struct ContentView: View {
                                 apiKey = ""
                                 apiKeyStatus = ""
                                 showingAPIKeyField = false
-                                if savedAPIKey == nil {
-                                    isDescribingImages = false
-                                }
                             }
                         }
-                    }
-                    .padding(.horizontal)
-                } else {
-                    HStack {
-                        Image(systemName: "key.fill")
-                            .foregroundColor(.green)
-                        Text("API Key: " + (savedAPIKey != nil ? "Configured ✓" : "Not Set"))
-                            .font(.caption)
-                        Button("Change") {
-                            showingAPIKeyField = true
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
                     }
                     .padding(.horizontal)
                 }
@@ -174,7 +187,7 @@ struct ContentView: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 Text(isDescribingImages 
-                     ? "Claude will describe your screenshots"
+                     ? "OCR will extract text from your screenshots (API key saved for future use)"
                      : "Screenshots saved as base64 in JSON")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -193,6 +206,7 @@ struct ContentView: View {
         .frame(width: 300, height: 400)
         .padding()
         .onAppear {
+            // Check if we need to show the API key field
             showingAPIKeyField = savedAPIKey == nil && isDescribingImages
         }
     }

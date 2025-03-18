@@ -2,6 +2,7 @@ import Cocoa
 import SwiftUI
 import Carbon
 import Security
+import UserNotifications
 
 // Carbon-based HotKey implementation for global shortcuts
 class HotKey {
@@ -113,6 +114,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize screenshot manager
         screenshotManager = ScreenshotManager()
         
+        // Request notification permissions early
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if granted {
+                print("Notification permission granted")
+            } else if let error = error {
+                print("Notification permission error: \(error.localizedDescription)")
+            }
+        }
+        
         // Set up the menu bar item
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
@@ -132,6 +142,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Register global shortcut
         registerGlobalShortcut()
+        
+        // Test documents folder access
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        print("Documents path: \(documentsPath.path)")
+        
+        if FileManager.default.fileExists(atPath: documentsPath.path) {
+            print("Documents folder exists and is accessible")
+        } else {
+            print("WARNING: Documents folder doesn't exist or isn't accessible")
+        }
     }
     
     @objc func togglePopover() {
@@ -151,6 +171,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         globalHotKey = HotKey(keyCode: 28, modifiers: modifiers) {
             DispatchQueue.main.async {
+                print("Hotkey triggered - capturing screenshot")
                 self.screenshotManager.captureScreenSelection()
             }
         }

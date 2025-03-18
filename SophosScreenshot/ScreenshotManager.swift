@@ -3,13 +3,7 @@ import Foundation
 import UserNotifications
 import SwiftUI
 import Security
-
-// Forward reference to AnthropicAPI since it's in the same module
-// but Swift might not see it during compilation order
-class AnthropicAPI {
-    static let shared = AnthropicAPI()
-    func describeImage(imageBase64: String, completion: @escaping (Result<String, Error>) -> Void) {}
-}
+import Vision
 
 class ScreenshotManager: NSObject, ObservableObject {
     private var image: NSImage?
@@ -27,6 +21,7 @@ class ScreenshotManager: NSObject, ObservableObject {
     }
     
     func captureScreenSelection() {
+        print("Starting screenshot capture")
         // Hide the application before taking the screenshot
         NSApplication.shared.hide(nil)
         isProcessing = true
@@ -39,22 +34,28 @@ class ScreenshotManager: NSObject, ObservableObject {
             
             // Create a temporary file path
             let tempFilePath = NSTemporaryDirectory() + "temp_screenshot.png"
+            print("Will save temp screenshot to: \(tempFilePath)")
             task.arguments = ["-i", "-s", tempFilePath]
             
             task.terminationHandler = { [weak self] process in
                 guard let self = self else { return }
+                print("Screenshot process terminated with status: \(process.terminationStatus)")
                 
                 // Create a work item for the main queue
                 let workItem = DispatchWorkItem {
                     // Check if the file exists (in case user canceled)
                     if FileManager.default.fileExists(atPath: tempFilePath) {
+                        print("Screenshot file exists at \(tempFilePath)")
                         if let image = NSImage(contentsOfFile: tempFilePath) {
                             self.image = image
+                            print("Loaded image: \(image.size.width)x\(image.size.height)")
                             
-                            // Check if we should use Claude to describe the image
-                            if self.useDescriptionAPI, let base64String = self.convertImageToBase64(image) {
-                                self.processImageWithClaude(image, base64String)
+                            // Check if we should use Vision OCR to process the image
+                            if self.useDescriptionAPI {
+                                print("Processing with Vision OCR")
+                                self.processImageWithVisionOCR(image)
                             } else {
+                                print("Saving image as JSON without text recognition")
                                 self.saveImageAsJson(image)
                                 self.showNotification("Screenshot captured and saved!")
                                 self.isProcessing = false
@@ -63,9 +64,11 @@ class ScreenshotManager: NSObject, ObservableObject {
                             // Clean up temp file
                             try? FileManager.default.removeItem(atPath: tempFilePath)
                         } else {
+                            print("Failed to load image from \(tempFilePath)")
                             self.isProcessing = false
                         }
                     } else {
+                        print("Screenshot file doesn't exist - user probably canceled")
                         self.isProcessing = false
                     }
                 }
@@ -75,6 +78,7 @@ class ScreenshotManager: NSObject, ObservableObject {
             }
             
             do {
+                print("Launching screencapture command...")
                 try task.run()
             } catch {
                 print("Error taking screenshot: \(error)")
@@ -83,32 +87,91 @@ class ScreenshotManager: NSObject, ObservableObject {
         }
     }
     
-    private func processImageWithClaude(_ image: NSImage, _ base64Data: String) {
+    private func processImageWithVisionOCR(_ image: NSImage) {
         // Show processing notification
-        self.showNotification("Processing image with Claude...")
+        self.showNotification("Processing image with OCR...")
+        print("Starting Vision OCR processing")
         
-        // Explicit type annotation to help the compiler
-        AnthropicAPI.shared.describeImage(imageBase64: base64Data) { [weak self] (result: Result<String, Error>) in
+        // Convert NSImage to CGImage for Vision processing
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            print("Failed to convert NSImage to CGImage")
+            self.saveImageAsJson(image)
+            self.showNotification("Failed to process image. Saved as base64 instead.")
+            self.isProcessing = false
+            return
+        }
+        
+        // Create a Vision text recognition request
+        let request = VNRecognizeTextRequest { [weak self] (request, error) in
             guard let self = self else { return }
             
-            // Create a work item for the main queue
-            let workItem = DispatchWorkItem {
-                switch result {
-                case .success(let description):
-                    self.lastDescription = description
-                    self.saveDescriptionAsJson(image, description)
-                    self.showNotification("Image described and saved!")
-                case .failure(let error):
-                    print("Error describing image: \(error)")
-                    // Fallback to saving just the image
+            // Process the results on the main queue
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Vision OCR error: \(error.localizedDescription)")
                     self.saveImageAsJson(image)
-                    self.showNotification("Couldn't describe image. Saved base64 data instead.")
+                    self.showNotification("OCR failed: \(error.localizedDescription)")
+                    self.isProcessing = false
+                    return
                 }
+                
+                // Get the text observations
+                guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                    print("No text observations found")
+                    self.saveImageAsJson(image)
+                    self.showNotification("No text found in image")
+                    self.isProcessing = false
+                    return
+                }
+                
+                // Extract the text from the observations
+                var recognizedText = ""
+                let maximumCandidates = 1  // We only want the top candidate for each observation
+                
+                for observation in observations {
+                    guard let candidate = observation.topCandidates(maximumCandidates).first else { continue }
+                    recognizedText += candidate.string + "\n"
+                }
+                
+                if recognizedText.isEmpty {
+                    print("No text recognized")
+                    self.saveImageAsJson(image)
+                    self.showNotification("No text recognized in image")
+                } else {
+                    print("Text recognized: \(recognizedText.count) characters")
+                    // Save the recognized text
+                    self.saveDescriptionAsJson(image, recognizedText)
+                    self.showNotification("Text recognized and saved!")
+                }
+                
                 self.isProcessing = false
             }
-            
-            // Execute the work item on the main queue
-            DispatchQueue.main.async(execute: workItem)
+        }
+        
+        // Configure the request:
+        // .accurate for better quality but slower processing
+        // .fast for quicker results with potential lower accuracy
+        request.recognitionLevel = .accurate
+        
+        // You can also set specific languages if needed
+        // request.recognitionLanguages = ["en-US", "fr-FR"]
+        
+        // Vision requests can be customized further:
+        request.usesLanguageCorrection = true  // Apply language correction to recognized text
+        
+        // Create an image request handler and perform the request
+        let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        
+        do {
+            try requestHandler.perform([request])
+            print("Vision request performed successfully")
+        } catch {
+            print("Failed to perform Vision request: \(error)")
+            DispatchQueue.main.async {
+                self.saveImageAsJson(image)
+                self.showNotification("OCR processing failed: \(error.localizedDescription)")
+                self.isProcessing = false
+            }
         }
     }
     
@@ -127,16 +190,16 @@ class ScreenshotManager: NSObject, ObservableObject {
         saveJson(json, prefix: "screenshot_base64")
     }
     
-    private func saveDescriptionAsJson(_ image: NSImage, _ description: String) {
-        // Create JSON dictionary with Claude's description instead of base64 data
+    private func saveDescriptionAsJson(_ image: NSImage, _ recognizedText: String) {
+        // Create JSON dictionary with OCR text instead of base64 data
         let json: [String: Any] = [
             "timestamp": Date().timeIntervalSince1970,
-            "description": description,
+            "recognizedText": recognizedText,
             "imageWidth": image.size.width,
             "imageHeight": image.size.height
         ]
         
-        saveJson(json, prefix: "screenshot_claude")
+        saveJson(json, prefix: "screenshot_ocr")
     }
     
     private func saveJson(_ json: [String: Any], prefix: String) {
@@ -148,10 +211,33 @@ class ScreenshotManager: NSObject, ObservableObject {
             let filename = "\(prefix)_\(timestamp).json"
             let fileURL = documentsPath.appendingPathComponent(filename)
             
+            print("Trying to save JSON file to: \(fileURL.path)")
+            print("Documents path is: \(documentsPath.path)")
+            
+            // Verify the directory exists
+            if FileManager.default.fileExists(atPath: documentsPath.path) {
+                print("Documents directory exists")
+            } else {
+                print("WARNING: Documents directory doesn't exist at \(documentsPath.path)")
+                // Try to create it
+                try FileManager.default.createDirectory(at: documentsPath, withIntermediateDirectories: true)
+                print("Created documents directory")
+            }
+            
             try jsonData.write(to: fileURL)
-            print("Data saved to: \(fileURL.path)")
+            print("SUCCESS: Data saved to: \(fileURL.path)")
+            
+            // Verify the file was created
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                print("Verified: File exists at \(fileURL.path)")
+                let fileSize = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 ?? 0
+                print("File size: \(fileSize) bytes")
+            } else {
+                print("ERROR: File was not created at \(fileURL.path)")
+            }
         } catch {
-            print("Error saving JSON: \(error)")
+            print("ERROR saving JSON: \(error)")
+            print("Error details: \(error.localizedDescription)")
         }
     }
     

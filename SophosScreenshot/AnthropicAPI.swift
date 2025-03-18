@@ -1,15 +1,17 @@
 import Foundation
 import Security
+import SwiftAnthropic
 
 class AnthropicAPI {
     static let shared = AnthropicAPI()
     
-    private let endpoint = "https://api.anthropic.com/v1/messages"
-    private let model = "claude-3-7-sonnet-20250219"
+    private let model = Model.claude3Sonnet // Using claude-3-sonnet model
     private let maxTokens = 1024
-    private let apiVersion = "2023-06-01"
+    private var service: AnthropicServiceProtocol?
     
     private func getAPIKey() -> String? {
+        print("Attempting to retrieve API key from keychain")
+        
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.sophos.screenshot",
@@ -21,209 +23,143 @@ class AnthropicAPI {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         
+        print("Keychain query status: \(status)")
+        
         if status == errSecSuccess, let data = result as? Data {
-            return String(data: data, encoding: .utf8)
+            let apiKey = String(data: data, encoding: .utf8)
+            if let key = apiKey {
+                let masked = key.count > 8 ? 
+                    String(key.prefix(4)) + "..." + String(key.suffix(4)) : 
+                    "[Invalid key]"
+                print("API Key found in keychain (masked): \(masked)")
+                return key
+            } else {
+                print("API Key found but could not decode as UTF-8 string")
+                return nil
+            }
+        } else if status == errSecItemNotFound {
+            print("API Key not found in keychain")
+            
+            // For testing only - REMOVE IN PRODUCTION
+            // Check if there's a key in UserDefaults as a fallback
+            if let fallbackKey = UserDefaults.standard.string(forKey: "anthropic_api_key") {
+                print("Found fallback API key in UserDefaults")
+                return fallbackKey
+            }
+        } else {
+            print("Keychain error: \(status)")
         }
         
         return nil
     }
     
     func describeImage(imageBase64: String, completion: @escaping (Result<String, Error>) -> Void) {
+        print("AnthropicAPI.describeImage called with \(imageBase64.count) bytes")
+        
+        // Debug - temporarily skip key check and use a dummy description to test the flow
+        if true {
+            print("DEBUG: Returning dummy description to test completion flow")
+            DispatchQueue.global().async {
+                sleep(1) // Simulate network delay
+                print("DEBUG: About to call completion handler with dummy success")
+                completion(.success("This is a dummy description to test the flow"))
+                print("DEBUG: Called completion handler with dummy success")
+            }
+            return
+        }
+        
+        // Get API key and initialize service if needed
         guard let apiKey = getAPIKey(), !apiKey.isEmpty else {
+            print("ERROR: API key is missing or empty")
             completion(.failure(APIError.missingAPIKey))
             return
         }
         
-        // Create the request
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.addValue(apiVersion, forHTTPHeaderField: "anthropic-version")
-        
-        // Prepare the message content with image
-        let content: [[String: Any]] = [
-            [
-                "type": "image",
-                "source": [
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": imageBase64
-                ]
-            ],
-            [
-                "type": "text",
-                "text": "Describe this image in detail. What does it show?"
-            ]
-        ]
-        
-        // Create the request body
-        let requestBody: [String: Any] = [
-            "model": model,
-            "max_tokens": maxTokens,
-            "messages": [
-                [
-                    "role": "user",
-                    "content": content
-                ]
-            ]
-        ]
-        
-        // Convert to JSON data
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        } catch {
-            completion(.failure(error))
-            return
+        // Initialize Anthropic service
+        if service == nil {
+            service = AnthropicServiceFactory.service(apiKey: apiKey)
+            print("Initialized Anthropic service with API key")
         }
         
-        // Make the request
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-            
-            guard let data = data else {
-                completion(.failure(APIError.noData))
-                return
-            }
-            
+        // Prepare the image source
+        let imageSource = MessageParameter.Message.Content.ImageSource(
+            type: .base64,
+            mediaType: .png,
+            data: imageBase64
+        )
+        
+        // Create the message with image and text prompt
+        let content: MessageParameter.Message.Content = .list([
+            .image(imageSource),
+            .text("Describe this image in detail. What does it show?")
+        ])
+        
+        // Create message parameter
+        let messageParam = MessageParameter.Message(role: .user, content: content)
+        let parameters = MessageParameter(
+            model: model,
+            messages: [messageParam],
+            maxTokens: maxTokens
+        )
+        
+        // Make the API request
+        print("Sending request to Anthropic API...")
+        Task {
             do {
-                // For debugging purposes
-                let jsonStr = String(data: data, encoding: .utf8) ?? "Unable to convert to string"
-                print("Raw API Response: \(jsonStr)")
+                let response = try await service?.createMessage(parameters)
                 
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // Extract the content from a successful response - newest Claude API format
-                    if let message = json["content"] as? [[String: Any]] {
-                        for item in message {
-                            if let type = item["type"] as? String, type == "text",
-                               let text = item["text"] as? String {
-                                completion(.success(text))
-                                return
-                            }
-                        }
-                    }
-                    
-                    // Try to extract from standard API response
-                    if let contentString = json["content"] as? String {
-                        completion(.success(contentString))
-                        return
-                    }
-                    
-                    // Try newest format with direct text extraction
-                    if let message = json["content"] as? [String: Any],
-                       let text = message["text"] as? String {
+                // Extract the text content from the response
+                if let content = response?.content {
+                    let text = extractTextFromContent(content)
+                    print("API Response processed successfully")
+                    DispatchQueue.main.async {
                         completion(.success(text))
-                        return
                     }
-                    
-                    // Try to get from Claude Messages API format
-                    if let message = json["message"] as? [String: Any],
-                       let content = message["content"] as? [[String: Any]] {
-                        for item in content {
-                            if let type = item["type"] as? String, type == "text",
-                               let text = item["text"] as? String {
-                                completion(.success(text))
-                                return
-                            }
-                        }
-                    }
-                    
-                    // Check for nested content in response format
-                    if let message = json["message"] as? [String: Any],
-                       let contentText = message["content"] as? String {
-                        completion(.success(contentText))
-                        return
-                    }
-                    
-                    // Check in Claude format with nested content in messages array
-                    if let messages = json["messages"] as? [[String: Any]] {
-                        for message in messages {
-                            if let role = message["role"] as? String, role == "assistant" {
-                                if let content = message["content"] as? [[String: Any]] {
-                                    for item in content {
-                                        if let type = item["type"] as? String, type == "text",
-                                           let text = item["text"] as? String {
-                                            completion(.success(text))
-                                            return
-                                        }
-                                    }
-                                } else if let content = message["content"] as? String {
-                                    completion(.success(content))
-                                    return
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Try direct extraction from various property paths
-                    if let text = json["text"] as? String {
-                        completion(.success(text))
-                        return
-                    }
-                    
-                    // Last resort - try to parse common patterns
-                    if let textContent = try? self.extractTextContentFromResponse(json) {
-                        completion(.success(textContent))
-                        return
-                    }
-                    
-                    // Pure fallback with debugging information
-                    print("Unable to parse Claude response, raw JSON: \(jsonStr)")
-                    completion(.success("I couldn't extract text from the image."))
-                    return
                 } else {
-                    completion(.failure(APIError.invalidResponse))
+                    print("API ERROR: No content in response")
+                    DispatchQueue.main.async {
+                        completion(.failure(APIError.noData))
+                    }
                 }
             } catch {
-                completion(.failure(error))
-            }
-        }
-        
-        task.resume()
-    }
-    
-    private func extractTextContentFromResponse(_ json: [String: Any]) throws -> String {
-        // Handle different potential response formats
-        
-        // Try to extract from content array
-        if let content = json["content"] as? [[String: Any]] {
-            for item in content {
-                if let type = item["type"] as? String, type == "text", 
-                   let text = item["text"] as? String {
-                    return text
+                print("API ERROR: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(.failure(error))
                 }
             }
         }
-        
-        // Try to extract from messages
-        if let messages = json["messages"] as? [[String: Any]],
-           let assistantMessage = messages.first(where: { ($0["role"] as? String) == "assistant" }),
-           let content = assistantMessage["content"] as? String {
-            return content
-        }
-        
-        // Try to extract from legacy format
-        if let message = json["message"] as? [String: Any],
-           let content = message["content"] as? String {
-            return content
-        }
-        
-        // Last resort - return the raw JSON as string
-        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]),
-           let jsonString = String(data: data, encoding: .utf8) {
-            return "Failed to parse response format. Raw response: \(jsonString)"
-        }
-        
-        throw APIError.invalidResponse
     }
     
-    enum APIError: Error {
+    private func extractTextFromContent(_ content: [MessageResponse.Content]) -> String {
+        // Join all text content from the response
+        return content.compactMap { block -> String? in
+            if case .text(let text) = block {
+                return text
+            }
+            return nil
+        }.joined(separator: "\n")
+    }
+    
+    enum APIError: Error, LocalizedError {
         case missingAPIKey
         case noData
         case invalidResponse
         case parsingError
+        case httpError(Int, String)
+        
+        var errorDescription: String? {
+            switch self {
+            case .missingAPIKey:
+                return "API key is missing or empty"
+            case .noData:
+                return "No data received from API"
+            case .invalidResponse:
+                return "Invalid response format from API"
+            case .parsingError:
+                return "Failed to parse API response"
+            case .httpError(let code, let message):
+                return "HTTP error \(code): \(message)"
+            }
+        }
     }
 }
