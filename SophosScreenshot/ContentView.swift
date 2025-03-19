@@ -6,7 +6,7 @@ import SwiftAnthropic
 class KeychainManager {
     static let shared = KeychainManager()
     
-    private let service = "com.sophos.screenshot"
+    private let service = "com.sophos.desktop"
     private let account = "anthropic_api_key"
     
     func saveAPIKey(_ apiKey: String) -> Bool {
@@ -88,7 +88,7 @@ struct ContentView: View {
     
     var body: some View {
         VStack(spacing: 15) {
-            Text("Screenshot Tool")
+            Text("Sophos Desktop")
                 .font(.headline)
             
             HStack {
@@ -102,25 +102,15 @@ struct ContentView: View {
             }
             .padding(.horizontal)
             
-            Button("Take Screenshot") {
-                if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
-                    appDelegate.screenshotManager.captureScreenSelection()
-                }
-            }
-            .buttonStyle(.borderedProminent)
+
             
             Divider()
             
-            Toggle("Extract text with OCR & Claude summarization", isOn: $isDescribingImages)
-                .padding(.horizontal)
-                .onChange(of: isDescribingImages) { describe in
-                    if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
-                        appDelegate.screenshotManager.setUseDescriptionAPI(describe)
-                    }
-                    
-                    // No API key needed for OCR
-                }
+            // OCR Toggle removed from UI but functionality preserved
+            // The value is still controlled by isDescribingImages state variable
+            // which affects ScreenshotManager behavior
             
+            // Only show API key UI if OCR is enabled (hidden control remains active)
             if isDescribingImages {
                 // We'll keep the OCR functionality while allowing API key storage
                 HStack {
@@ -205,21 +195,25 @@ struct ContentView: View {
             
             Divider()
             
-            Button("Test Anthropic API") {
-                showingAPITestView = true
+            Spacer()
+            
+            Button(action: {
+                NSApplication.shared.terminate(nil)
+            }) {
+                HStack {
+                    Image(systemName: "power")
+                        .foregroundColor(.red)
+                    Text("Quit Sophos Desktop")
+                }
             }
             .buttonStyle(.borderedProminent)
-            
-            Spacer()
+            .controlSize(.small)
         }
         .frame(width: 300, height: 400)
         .padding()
         .onAppear {
             // Check if we need to show the API key field
             showingAPIKeyField = savedAPIKey == nil && isDescribingImages
-        }
-        .sheet(isPresented: $showingAPITestView) {
-            APITestView()
         }
     }
 }

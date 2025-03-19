@@ -16,13 +16,13 @@ class AnthropicAPI {
         
         // Input validation
         guard !text.isEmpty else {
-            completion(.failure(NSError(domain: "com.sophos.screenshot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Empty input"])))
+            completion(.failure(NSError(domain: "com.sophos.desktop", code: 1, userInfo: [NSLocalizedDescriptionKey: "Empty input"])))
             return
         }
         
         // Get API key from UserDefaults
         guard let apiKey = UserDefaults.standard.string(forKey: "anthropic_api_key"), !apiKey.isEmpty else {
-            completion(.failure(NSError(domain: "com.sophos.screenshot", code: 2, userInfo: [NSLocalizedDescriptionKey: "API key is missing or empty"])))
+            completion(.failure(NSError(domain: "com.sophos.desktop", code: 2, userInfo: [NSLocalizedDescriptionKey: "API key is missing or empty"])))
             return
         }
         
@@ -66,7 +66,7 @@ class AnthropicAPI {
                     completion(.success(summary))
                 } else {
                     print("API ERROR: No text content in response")
-                    completion(.failure(NSError(domain: "com.sophos.screenshot", code: 3, userInfo: [NSLocalizedDescriptionKey: "No text content received from API"])))
+                    completion(.failure(NSError(domain: "com.sophos.desktop", code: 3, userInfo: [NSLocalizedDescriptionKey: "No text content received from API"])))
                 }
             } catch {
                 print("API ERROR: \(error.localizedDescription)")
@@ -379,7 +379,7 @@ class ScreenshotManager: NSObject, ObservableObject {
         center.requestAuthorization(options: [.alert, .sound]) { granted, error in
             if granted {
                 let content = UNMutableNotificationContent()
-                content.title = "Screenshot Tool"
+                content.title = "Sophos Desktop"
                 content.body = message
                 content.sound = UNNotificationSound.default
                 
