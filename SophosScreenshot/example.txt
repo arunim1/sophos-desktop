@@ -1,0 +1,87 @@
+<thinking>
+<flashcard_creation_process>
+First, let me extract the key information from the screenshot description:
+
+1. The verifiable credential system involves three roles: holder, issuer, and verifier
+2. These three roles operate in a "triangle of trust"
+3. The holder mediates between issuer and verifier
+4. Trust relationships exist between:
+   - Issuer and holder (mutual trust)
+   - Holder and verifier (holder trusts verifier)
+   - Verifier and issuer (verifier trusts issuer)
+5. Any role (holder, issuer, verifier) can be played by:
+   - A person
+   - An institution
+   - An IoT device
+
+Now I'll prioritize this information based on importance:
+- The core concept of the "triangle of trust" and the three roles is fundamental
+- The specific trust relationships between each role are important details
+- The flexibility of who/what can play each role is a supporting concept
+
+For effective flashcards, I'll need to:
+1. Make them atomic (focus on one concept per card)
+2. Ensure they're future-proof (clear enough to understand later)
+3. Follow the minimum information principle (include only essential details)
+4. Build upon basics (start with fundamental concepts)
+
+I'll create the following flashcards:
+1. Basic card identifying the three roles in the verifiable credential system
+2. Cloze card for the "triangle of trust" concept
+3. Three basic cards for each trust relationship
+4. Basic card for what entities can play the roles
+
+For each card, I'll ensure clarity, conciseness, and adherence to the rules.
+</flashcard_creation_process>
+</thinking>
+
+<card>
+<type_of_card>Basic</type_of_card>
+<Front>What are the three roles in a verifiable credential system?</Front>
+<Back>Issuer, Holder, and Verifier</Back>
+</card>
+
+<card>
+<type_of_card>Cloze</type_of_card>
+<Front>In verifiable credentials, the [[c1::holder]] mediates between the issuer and verifier, forming a triangle of trust.</Front>
+<Back>The holder is the central role that connects the other two parties.</Back>
+</card>
+
+<card>
+<type_of_card>Basic</type_of_card>
+<Front>What is the trust relationship between the issuer and holder in verifiable credentials?</Front>
+<Back>The issuer and holder trust each other (mutual trust).</Back>
+</card>
+
+<card>
+<type_of_card>Basic</type_of_card>
+<Front>What is the trust relationship between the holder and verifier in verifiable credentials?</Front>
+<Back>The holder trusts the verifier.</Back>
+</card>
+
+<card>
+<type_of_card>Basic</type_of_card>
+<Front>What is the trust relationship between the verifier and issuer in verifiable credentials?</Front>
+<Back>The verifier trusts the issuer.</Back>
+</card>
+
+<card>
+<type_of_card>Cloze</type_of_card>
+<Front>In a verifiable credential system, any role can be played by a [[c1::person]], an [[c2::institution]], or an [[c3::IoT device]].</Front>
+<Back>This flexibility allows the system to work across various contexts and use cases.</Back>
+</card>
+
+<card>
+<type_of_card>Basic</type_of_card>
+<Front>What metaphor describes the relationship structure between issuer, holder, and verifier in verifiable credentials?</Front>
+<Back>A "triangle of trust"</Back>
+</card>
+
+<card>
+<type_of_card>Cloze</type_of_card>
+<Front>In the verifiable credentials triangle of trust:
+- Issuer and holder: [[c1::mutual trust]]
+- Holder and verifier: [[c2::holder trusts verifier]]
+- Verifier and issuer: [[c3::verifier trusts issuer]]</Front>
+<Back>These trust relationships enable the secure exchange of credentials.</Back>
+</card>

@@ -10,9 +10,9 @@ import SwiftAnthropic
 class AnthropicAPI {
     static let shared = AnthropicAPI()
     
-    // Summarize text using the Claude API
-    func summarizeText(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
-        print("AnthropicAPI.summarizeText called with \(text.count) characters")
+    // Create flashcards from OCR text using the Claude API
+    func createFlashcards(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
+        print("AnthropicAPI.createFlashcards called with \(text.count) characters")
         
         // Input validation
         guard !text.isEmpty else {
@@ -26,44 +26,58 @@ class AnthropicAPI {
             return
         }
         
+        // Get the prompt template from bundle
+        guard let promptTemplate = loadPromptTemplate() else {
+            completion(.failure(NSError(domain: "com.sophos.desktop", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not load prompt template"])))
+            return
+        }
+        
+        // Replace {{DESCRIPTION}} with the OCR text
+        let prompt = promptTemplate.replacingOccurrences(of: "{{DESCRIPTION}}", with: text)
+        
         // Create service
         let service = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
         
-        // Create message content
-        let content: MessageParameter.Message.Content = .text(
-            "This is text extracted from a screenshot using OCR. Please summarize it concisely:\n\n\(text)"
-        )
+        // Create message content with the prompt
+        let content: MessageParameter.Message.Content = .text(prompt)
         
         // Create message parameters
         let messageParam = MessageParameter.Message(role: .user, content: content)
         let parameters = MessageParameter(
             model: Model.claude3Sonnet,
             messages: [messageParam],
-            maxTokens: 1024
+            maxTokens: 4096 // Increased for flashcard creation
         )
         
         // Make API request
-        print("Sending summarization request to Anthropic API...")
+        print("Sending flashcard creation request to Anthropic API...")
         Task {
             do {
                 let response = try await service.createMessage(parameters)
                 
                 // Extract text from response
                 let content = response.content
-                let summary = content.compactMap { block -> String? in
+                let responseText = content.compactMap { block -> String? in
                     if case .text(let text) = block {
                         return text
                     }
                     return nil
                 }.joined(separator: "\n")
                 
-                if !summary.isEmpty {
+                if !responseText.isEmpty {
                     print("===============================")
-                    print("CLAUDE SUMMARIZATION SUCCESSFUL")
-                    print("Summary length: \(summary.count) characters")
-                    print("Summary preview: \(summary.prefix(50))...")
+                    print("CLAUDE FLASHCARD CREATION SUCCESSFUL")
+                    print("Response length: \(responseText.count) characters")
+                    print("Response preview: \(responseText.prefix(50))...")
                     print("===============================")
-                    completion(.success(summary))
+                    
+                    // Parse the flashcards from the response
+                    let flashcards = extractFlashcards(from: responseText)
+                    
+                    // Convert flashcards to JSON
+                    let flashcardsJson = convertFlashcardsToJson(flashcards)
+                    
+                    completion(.success(flashcardsJson))
                 } else {
                     print("API ERROR: No text content in response")
                     completion(.failure(NSError(domain: "com.sophos.desktop", code: 3, userInfo: [NSLocalizedDescriptionKey: "No text content received from API"])))
@@ -73,6 +87,75 @@ class AnthropicAPI {
                 completion(.failure(error))
             }
         }
+    }
+    
+    private func loadPromptTemplate() -> String? {
+        // Get the path to prompt.txt
+        guard let path = Bundle.main.path(forResource: "prompt", ofType: "txt") else {
+            print("ERROR: Could not find prompt.txt in the bundle")
+            return nil
+        }
+        
+        do {
+            // Read the content of the file
+            let promptTemplate = try String(contentsOfFile: path, encoding: .utf8)
+            return promptTemplate
+        } catch {
+            print("ERROR: Could not read prompt.txt: \(error)")
+            return nil
+        }
+    }
+    
+    // Extract flashcards from Claude's response
+    private func extractFlashcards(from response: String) -> [[String: String]] {
+        var flashcards: [[String: String]] = []
+        
+        // Pattern to match flashcard blocks in the response
+        let pattern = "<card>\\s*<type_of_card>(.*?)</type_of_card>\\s*<Front>(.*?)</Front>\\s*<Back>(.*?)</Back>\\s*</card>"
+        
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
+            let nsString = response as NSString
+            let matches = regex.matches(in: response, options: [], range: NSRange(location: 0, length: nsString.length))
+            
+            for match in matches {
+                if match.numberOfRanges == 4 { // Full match + 3 capture groups
+                    let typeRange = match.range(at: 1)
+                    let frontRange = match.range(at: 2)
+                    let backRange = match.range(at: 3)
+                    
+                    let type = nsString.substring(with: typeRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let front = nsString.substring(with: frontRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let back = nsString.substring(with: backRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    let flashcard: [String: String] = [
+                        "type": type,
+                        "front": front,
+                        "back": back
+                    ]
+                    
+                    flashcards.append(flashcard)
+                }
+            }
+        } catch {
+            print("ERROR: Failed to parse flashcards: \(error)")
+        }
+        
+        return flashcards
+    }
+    
+    // Convert flashcards array to JSON string
+    private func convertFlashcardsToJson(_ flashcards: [[String: String]]) -> String {
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: flashcards, options: .prettyPrinted)
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                return jsonString
+            }
+        } catch {
+            print("ERROR: Failed to convert flashcards to JSON: \(error)")
+        }
+        
+        return "[]"
     }
 }
 
@@ -216,23 +299,23 @@ class ScreenshotManager: NSObject, ObservableObject {
                     if let savedAPIKey = UserDefaults.standard.string(forKey: "anthropic_api_key"), !savedAPIKey.isEmpty {
                         // First save the OCR text
                         self.saveOCRTextAsJson(image, recognizedText)
-                        self.showNotification("Text recognized. Summarizing with Claude...")
+                        self.showNotification("Text recognized. Creating flashcards with Claude...")
                         
-                        // Then send to Claude for summarization
-                        AnthropicAPI.shared.summarizeText(recognizedText) { [weak self] (result: Result<String, Error>) in
+                        // Then send to Claude for flashcard creation
+                        AnthropicAPI.shared.createFlashcards(recognizedText) { [weak self] (result: Result<String, Error>) in
                             guard let self = self else { return }
                             
                             DispatchQueue.main.async(execute: DispatchWorkItem {
                                 switch result {
-                                case .success(let summary):
-                                    print("SUCCESS: Claude API returned summary")
-                                    print("Summary length: \(summary.count) characters")
-                                    // Save both OCR text and summary
-                                    self.saveSummaryAsJson(image, recognizedText, summary)
-                                    self.showNotification("Text summarized by Claude and saved to JSON!")
+                                case .success(let flashcardsJson):
+                                    print("SUCCESS: Claude API returned flashcards")
+                                    print("Flashcards JSON length: \(flashcardsJson.count) characters")
+                                    // Save both OCR text and flashcards
+                                    self.saveFlashcardsAsJson(image, recognizedText, flashcardsJson)
+                                    self.showNotification("Flashcards created by Claude and saved to JSON!")
                                 case .failure(let error):
-                                    print("Failed to summarize: \(error.localizedDescription)")
-                                    self.showNotification("OCR text saved. Summarization failed.")
+                                    print("Failed to create flashcards: \(error.localizedDescription)")
+                                    self.showNotification("OCR text saved. Flashcard creation failed.")
                                 }
                                 self.isProcessing = false
                             })
@@ -301,20 +384,120 @@ class ScreenshotManager: NSObject, ObservableObject {
         saveJson(json, prefix: "screenshot_ocr")
     }
     
-    private func saveSummaryAsJson(_ image: NSImage, _ originalText: String, _ summary: String) {
-        print("SAVING CLAUDE SUMMARY - Length: \(summary.count) characters")
-        print("Summary preview: \(summary.prefix(100))...")
+    private func saveFlashcardsAsJson(_ image: NSImage, _ originalText: String, _ flashcardsJson: String) {
+        print("SAVING CLAUDE FLASHCARDS - Length: \(flashcardsJson.count) characters")
+        print("Flashcards preview: \(flashcardsJson.prefix(min(100, flashcardsJson.count)))...")
         
-        // Create JSON dictionary with both OCR text and Claude's summary
-        let json: [String: Any] = [
-            "timestamp": Date().timeIntervalSince1970,
-            "recognizedText": originalText,
-            "summary": summary,
-            "imageWidth": image.size.width,
-            "imageHeight": image.size.height
-        ]
+        // Parse the flashcards JSON into an array of dictionaries if possible
+        var flashcardsArray: [[String: String]] = []
+        if let data = flashcardsJson.data(using: .utf8),
+           let parsedArray = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] {
+            flashcardsArray = parsedArray
+            print("Successfully parsed JSON into array with \(flashcardsArray.count) flashcards")
+        } else {
+            print("Failed to parse JSON into array, will attempt to extract flashcards directly")
+            // If parsing failed, extract flashcards using regex directly in ScreenshotManager
+            flashcardsArray = extractFlashcardsDirectly(from: flashcardsJson)
+            print("Extracted \(flashcardsArray.count) flashcards directly from string")
+        }
         
-        saveJson(json, prefix: "screenshot_summary")
+        // No longer saving a combined JSON file with the original text
+        // Only save individual flashcard files
+        saveIndividualFlashcards(flashcardsArray, originalText: originalText, imageSize: image.size)
+    }
+    
+    // Save individual flashcards as separate JSON files
+    private func saveIndividualFlashcards(_ flashcards: [[String: String]], originalText: String, imageSize: NSSize) {
+        print("Saving \(flashcards.count) individual flashcard files...")
+        
+        let timestamp = Int(Date().timeIntervalSince1970)
+        
+        for (index, flashcard) in flashcards.enumerated() {
+            // Create individual JSON for this flashcard - without the originalText
+            let individualJson: [String: Any] = [
+                "timestamp": timestamp,
+                "cardIndex": index,
+                "type": flashcard["type"] ?? "unknown",
+                "front": flashcard["front"] ?? "",
+                "back": flashcard["back"] ?? "",
+                "imageWidth": imageSize.width,
+                "imageHeight": imageSize.height
+            ]
+            
+            // Generate filename with timestamp and index
+            let filename = "flashcard_\(timestamp)_\(index).json"
+            saveJsonToFile(individualJson, filename: filename)
+        }
+    }
+    
+    private func saveJsonToFile(_ json: [String: Any], filename: String) {
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+            let fileURL = documentsPath.appendingPathComponent(filename)
+            
+            print("Saving individual JSON file to: \(fileURL.path)")
+            
+            try jsonData.write(to: fileURL)
+            print("Successfully saved \(filename)")
+        } catch {
+            print("Error saving individual JSON file \(filename): \(error)")
+        }
+    }
+    
+    // Extract flashcards directly from Claude's response using regex
+    private func extractFlashcardsDirectly(from response: String) -> [[String: String]] {
+        var flashcards: [[String: String]] = []
+        
+        // First, clean the response by removing any <thinking> sections
+        var cleanedResponse = response
+        if let thinkingRange = response.range(of: "<thinking>[\\s\\S]*?</thinking>", options: .regularExpression) {
+            cleanedResponse = response.replacingCharacters(in: thinkingRange, with: "")
+            print("Removed <thinking> section from Claude response")
+        }
+        
+        // Also remove any other XML-like tags that aren't card-related
+        let nonCardPatterns = ["<flashcard_creation_process>[\\s\\S]*?</flashcard_creation_process>", "<response>[\\s\\S]*?</response>"]
+        for pattern in nonCardPatterns {
+            if let range = cleanedResponse.range(of: pattern, options: .regularExpression) {
+                cleanedResponse = cleanedResponse.replacingCharacters(in: range, with: "")
+                print("Removed non-card XML section from Claude response")
+            }
+        }
+        
+        // Pattern to match flashcard blocks in the response, case-insensitive for tag names
+        let pattern = "<card>\\s*<type_of_card>(.*?)</type_of_card>\\s*<[fF]ront>(.*?)</[fF]ront>\\s*<[bB]ack>(.*?)</[bB]ack>\\s*</card>"
+        
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
+            let nsString = cleanedResponse as NSString
+            let matches = regex.matches(in: cleanedResponse, options: [], range: NSRange(location: 0, length: nsString.length))
+            
+            print("Found \(matches.count) flashcard matches in Claude response")
+            
+            for match in matches {
+                if match.numberOfRanges == 4 { // Full match + 3 capture groups
+                    let typeRange = match.range(at: 1)
+                    let frontRange = match.range(at: 2)
+                    let backRange = match.range(at: 3)
+                    
+                    let type = nsString.substring(with: typeRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let front = nsString.substring(with: frontRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let back = nsString.substring(with: backRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    let flashcard: [String: String] = [
+                        "type": type,
+                        "front": front,
+                        "back": back
+                    ]
+                    
+                    flashcards.append(flashcard)
+                }
+            }
+        } catch {
+            print("ERROR: Failed to parse flashcards: \(error)")
+        }
+        
+        return flashcards
     }
     
     private func saveJson(_ json: [String: Any], prefix: String) {

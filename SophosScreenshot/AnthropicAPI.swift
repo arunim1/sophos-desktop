@@ -5,8 +5,8 @@ import SwiftAnthropic
 class AnthropicAPI {
     static let shared = AnthropicAPI()
     
-    private let model = Model.claude3Sonnet // Using claude-3-sonnet model
-    private let maxTokens = 1024
+    private let model = Model.claude37Sonnet 
+    private let maxTokens = 2048
     private var service: AnthropicServiceProtocol?
     
     private func getAPIKey() -> String? {
@@ -53,9 +53,9 @@ class AnthropicAPI {
         return nil
     }
     
-    // Text summarization function using Claude
-    func summarizeText(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
-        print("AnthropicAPI.summarizeText called with \(text.count) characters")
+    // Function to create flashcards from OCR text using Claude
+    func createFlashcards(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
+        print("AnthropicAPI.createFlashcards called with \(text.count) characters")
         
         // Input validation
         guard !text.isEmpty else {
@@ -77,10 +77,18 @@ class AnthropicAPI {
             print("Initialized Anthropic service with API key")
         }
         
-        // Create the message content with text only
-        let content: MessageParameter.Message.Content = .text(
-            "This is text extracted from a screenshot using OCR. Please summarize it concisely:\n\n\(text)"
-        )
+        // Get the prompt template from prompt.txt
+        guard let promptTemplate = loadPromptTemplate() else {
+            print("ERROR: Could not load prompt template")
+            completion(.failure(APIError.invalidPrompt))
+            return
+        }
+        
+        // Replace {{DESCRIPTION}} with the OCR text
+        let prompt = promptTemplate.replacingOccurrences(of: "{{DESCRIPTION}}", with: text)
+        
+        // Create the message content with the prompt
+        let content: MessageParameter.Message.Content = .text(prompt)
         
         // Create message parameter
         let messageParam = MessageParameter.Message(role: .user, content: content)
@@ -91,17 +99,27 @@ class AnthropicAPI {
         )
         
         // Make the API request
-        print("Sending summarization request to Anthropic API...")
+        print("Sending flashcard creation request to Anthropic API...")
         Task {
             do {
                 let response = try await service?.createMessage(parameters)
                 
                 // Extract the text content from the response
                 if let content = response?.content {
-                    let summary = extractTextFromContent(content)
-                    print("Summarization successful: \(summary.prefix(50))...")
+                    let responseText = extractTextFromContent(content)
+                    print("Flashcard creation successful: \(responseText.prefix(50))...")
+                    print("FULL CLAUDE RESPONSE:\n\(responseText)\n")
+                    
+                    // Parse the flashcards from the response
+                    let flashcards = extractFlashcards(from: responseText)
+                    print("Extracted \(flashcards.count) flashcards from Claude response")
+                    
+                    // Convert flashcards to JSON
+                    let flashcardsJson = convertFlashcardsToJson(flashcards)
+                    print("Converted flashcards to JSON string of length \(flashcardsJson.count)")
+                    
                     DispatchQueue.main.async {
-                        completion(.success(summary))
+                        completion(.success(flashcardsJson))
                     }
                 } else {
                     print("API ERROR: No content in response")
@@ -128,12 +146,101 @@ class AnthropicAPI {
         }.joined(separator: "\n")
     }
     
+    private func loadPromptTemplate() -> String? {
+        // Get the path to prompt.txt
+        guard let path = Bundle.main.path(forResource: "prompt", ofType: "txt") else {
+            print("ERROR: Could not find prompt.txt in the bundle")
+            return nil
+        }
+        
+        do {
+            // Read the content of the file
+            let promptTemplate = try String(contentsOfFile: path, encoding: .utf8)
+            return promptTemplate
+        } catch {
+            print("ERROR: Could not read prompt.txt: \(error)")
+            return nil
+        }
+    }
+    
+    // Extract flashcards from Claude's response
+    private func extractFlashcards(from response: String) -> [[String: String]] {
+        var flashcards: [[String: String]] = []
+        
+        // First, clean the response by removing any <thinking> sections
+        var cleanedResponse = response
+        if let thinkingRange = response.range(of: "<thinking>[\s\S]*?</thinking>", options: .regularExpression) {
+            cleanedResponse = response.replacingCharacters(in: thinkingRange, with: "")
+            print("Removed <thinking> section from Claude response")
+        }
+        
+        // Also remove any other XML-like tags that aren't card-related
+        let nonCardPatterns = ["<flashcard_creation_process>[\s\S]*?</flashcard_creation_process>", "<response>[\s\S]*?</response>"]
+        for pattern in nonCardPatterns {
+            if let range = cleanedResponse.range(of: pattern, options: .regularExpression) {
+                cleanedResponse = cleanedResponse.replacingCharacters(in: range, with: "")
+                print("Removed non-card XML section from Claude response")
+            }
+        }
+        
+        // Updated pattern to match flashcard blocks in the response, case-insensitive for tag names
+        // Improved to handle more formatting variations including whitespace and newlines
+        let pattern = "<card>\\s*<type_of_card>(.*?)</type_of_card>\\s*<[fF]ront>(.*?)</[fF]ront>\\s*<[bB]ack>(.*?)</[bB]ack>\\s*</card>"
+        
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
+            let nsString = cleanedResponse as NSString
+            let matches = regex.matches(in: cleanedResponse, options: [], range: NSRange(location: 0, length: nsString.length))
+            
+            print("Found \(matches.count) flashcard matches in Claude response")
+            
+            for match in matches {
+                if match.numberOfRanges == 4 { // Full match + 3 capture groups
+                    let typeRange = match.range(at: 1)
+                    let frontRange = match.range(at: 2)
+                    let backRange = match.range(at: 3)
+                    
+                    let type = nsString.substring(with: typeRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let front = nsString.substring(with: frontRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let back = nsString.substring(with: backRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    let flashcard: [String: String] = [
+                        "type": type,
+                        "front": front,
+                        "back": back
+                    ]
+                    
+                    flashcards.append(flashcard)
+                }
+            }
+        } catch {
+            print("ERROR: Failed to parse flashcards: \(error)")
+        }
+        
+        return flashcards
+    }
+    
+    // Convert flashcards array to JSON string
+    private func convertFlashcardsToJson(_ flashcards: [[String: String]]) -> String {
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: flashcards, options: .prettyPrinted)
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                return jsonString
+            }
+        } catch {
+            print("ERROR: Failed to convert flashcards to JSON: \(error)")
+        }
+        
+        return "[]"
+    }
+    
     enum APIError: Error, LocalizedError {
         case missingAPIKey
         case noData
         case invalidResponse
         case parsingError
         case emptyInput
+        case invalidPrompt
         case httpError(Int, String)
         
         var errorDescription: String? {
@@ -147,7 +254,9 @@ class AnthropicAPI {
             case .parsingError:
                 return "Failed to parse API response"
             case .emptyInput:
-                return "Empty text input for summarization"
+                return "Empty text input for flashcard creation"
+            case .invalidPrompt:
+                return "Could not load or process prompt template"
             case .httpError(let code, let message):
                 return "HTTP error \(code): \(message)"
             }
