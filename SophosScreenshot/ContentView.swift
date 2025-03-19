@@ -109,7 +109,7 @@ struct ContentView: View {
             
             Divider()
             
-            Toggle("Extract text with OCR (Claude API coming soon)", isOn: $isDescribingImages)
+            Toggle("Extract text with OCR & Claude summarization", isOn: $isDescribingImages)
                 .padding(.horizontal)
                 .onChange(of: isDescribingImages) { describe in
                     if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
@@ -124,7 +124,7 @@ struct ContentView: View {
                 HStack {
                     Image(systemName: "key.fill")
                         .foregroundColor(savedAPIKey != nil ? .green : .gray)
-                    Text("Anthropic API Key: " + (savedAPIKey != nil ? "Configured ✓" : "Not Set"))
+                    Text("Claude API Key: " + (savedAPIKey != nil ? "Configured ✓" : "Not Set"))
                         .font(.caption)
                     Button(savedAPIKey != nil ? "Change" : "Set") {
                         showingAPIKeyField = true
@@ -136,7 +136,7 @@ struct ContentView: View {
                 
                 if showingAPIKeyField {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Anthropic API Key:")
+                        Text("Claude API Key:")
                             .font(.caption)
                         
                         // Use a direct NSSecureTextField wrapper for better paste support
@@ -187,7 +187,7 @@ struct ContentView: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 Text(isDescribingImages 
-                     ? "OCR will extract text from your screenshots (API key saved for future use)"
+                     ? "OCR extracts text from screenshots. If API key is set, Claude will also summarize the text."
                      : "Screenshots saved as base64 in JSON")
                     .font(.caption)
                     .foregroundColor(.secondary)

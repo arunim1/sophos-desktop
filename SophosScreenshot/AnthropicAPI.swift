@@ -53,18 +53,14 @@ class AnthropicAPI {
         return nil
     }
     
-    func describeImage(imageBase64: String, completion: @escaping (Result<String, Error>) -> Void) {
-        print("AnthropicAPI.describeImage called with \(imageBase64.count) bytes")
+    // Text summarization function using Claude
+    func summarizeText(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
+        print("AnthropicAPI.summarizeText called with \(text.count) characters")
         
-        // Debug - temporarily skip key check and use a dummy description to test the flow
-        if true {
-            print("DEBUG: Returning dummy description to test completion flow")
-            DispatchQueue.global().async {
-                sleep(1) // Simulate network delay
-                print("DEBUG: About to call completion handler with dummy success")
-                completion(.success("This is a dummy description to test the flow"))
-                print("DEBUG: Called completion handler with dummy success")
-            }
+        // Input validation
+        guard !text.isEmpty else {
+            print("ERROR: Empty text input")
+            completion(.failure(APIError.emptyInput))
             return
         }
         
@@ -81,18 +77,10 @@ class AnthropicAPI {
             print("Initialized Anthropic service with API key")
         }
         
-        // Prepare the image source
-        let imageSource = MessageParameter.Message.Content.ImageSource(
-            type: .base64,
-            mediaType: .png,
-            data: imageBase64
+        // Create the message content with text only
+        let content: MessageParameter.Message.Content = .text(
+            "This is text extracted from a screenshot using OCR. Please summarize it concisely:\n\n\(text)"
         )
-        
-        // Create the message with image and text prompt
-        let content: MessageParameter.Message.Content = .list([
-            .image(imageSource),
-            .text("Describe this image in detail. What does it show?")
-        ])
         
         // Create message parameter
         let messageParam = MessageParameter.Message(role: .user, content: content)
@@ -103,17 +91,17 @@ class AnthropicAPI {
         )
         
         // Make the API request
-        print("Sending request to Anthropic API...")
+        print("Sending summarization request to Anthropic API...")
         Task {
             do {
                 let response = try await service?.createMessage(parameters)
                 
                 // Extract the text content from the response
                 if let content = response?.content {
-                    let text = extractTextFromContent(content)
-                    print("API Response processed successfully")
+                    let summary = extractTextFromContent(content)
+                    print("Summarization successful: \(summary.prefix(50))...")
                     DispatchQueue.main.async {
-                        completion(.success(text))
+                        completion(.success(summary))
                     }
                 } else {
                     print("API ERROR: No content in response")
@@ -145,6 +133,7 @@ class AnthropicAPI {
         case noData
         case invalidResponse
         case parsingError
+        case emptyInput
         case httpError(Int, String)
         
         var errorDescription: String? {
@@ -157,6 +146,8 @@ class AnthropicAPI {
                 return "Invalid response format from API"
             case .parsingError:
                 return "Failed to parse API response"
+            case .emptyInput:
+                return "Empty text input for summarization"
             case .httpError(let code, let message):
                 return "HTTP error \(code): \(message)"
             }

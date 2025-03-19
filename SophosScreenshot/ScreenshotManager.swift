@@ -137,14 +137,40 @@ class ScreenshotManager: NSObject, ObservableObject {
                     print("No text recognized")
                     self.saveImageAsJson(image)
                     self.showNotification("No text recognized in image")
+                    self.isProcessing = false
                 } else {
                     print("Text recognized: \(recognizedText.count) characters")
-                    // Save the recognized text
-                    self.saveDescriptionAsJson(image, recognizedText)
-                    self.showNotification("Text recognized and saved!")
+                    
+                    // Check if we should also summarize with Claude
+                    if let savedAPIKey = UserDefaults.standard.string(forKey: "anthropic_api_key"), !savedAPIKey.isEmpty {
+                        // First save the OCR text
+                        self.saveOCRTextAsJson(image, recognizedText)
+                        self.showNotification("Text recognized. Summarizing with Claude...")
+                        
+                        // Then send to Claude for summarization
+                        AnthropicAPI.shared.summarizeText(recognizedText) { [weak self] result in
+                            guard let self = self else { return }
+                            
+                            DispatchQueue.main.async {
+                                switch result {
+                                case .success(let summary):
+                                    // Save both OCR text and summary
+                                    self.saveSummaryAsJson(image, recognizedText, summary)
+                                    self.showNotification("Text summarized by Claude!")
+                                case .failure(let error):
+                                    print("Failed to summarize: \(error.localizedDescription)")
+                                    self.showNotification("OCR text saved. Summarization failed.")
+                                }
+                                self.isProcessing = false
+                            }
+                        }
+                    } else {
+                        // Just save the OCR results without summarization
+                        self.saveOCRTextAsJson(image, recognizedText)
+                        self.showNotification("Text recognized and saved!")
+                        self.isProcessing = false
+                    }
                 }
-                
-                self.isProcessing = false
             }
         }
         
@@ -190,8 +216,8 @@ class ScreenshotManager: NSObject, ObservableObject {
         saveJson(json, prefix: "screenshot_base64")
     }
     
-    private func saveDescriptionAsJson(_ image: NSImage, _ recognizedText: String) {
-        // Create JSON dictionary with OCR text instead of base64 data
+    private func saveOCRTextAsJson(_ image: NSImage, _ recognizedText: String) {
+        // Create JSON dictionary with OCR text
         let json: [String: Any] = [
             "timestamp": Date().timeIntervalSince1970,
             "recognizedText": recognizedText,
@@ -200,6 +226,19 @@ class ScreenshotManager: NSObject, ObservableObject {
         ]
         
         saveJson(json, prefix: "screenshot_ocr")
+    }
+    
+    private func saveSummaryAsJson(_ image: NSImage, _ originalText: String, _ summary: String) {
+        // Create JSON dictionary with both OCR text and Claude's summary
+        let json: [String: Any] = [
+            "timestamp": Date().timeIntervalSince1970,
+            "recognizedText": originalText,
+            "summary": summary,
+            "imageWidth": image.size.width,
+            "imageHeight": image.size.height
+        ]
+        
+        saveJson(json, prefix: "screenshot_summary")
     }
     
     private func saveJson(_ json: [String: Any], prefix: String) {
