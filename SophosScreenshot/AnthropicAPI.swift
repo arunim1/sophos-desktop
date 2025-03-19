@@ -6,7 +6,7 @@ import Cocoa
 class AnthropicAPI {
     static let shared = AnthropicAPI()
     
-    private let model = Model.claude3Sonnet
+    private let model = Model.claude37Sonnet
     private let maxTokens = 2048
     private var service: AnthropicService?
     
@@ -139,7 +139,7 @@ class AnthropicAPI {
     private func extractTextFromContent(_ content: [MessageResponse.Content]) -> String {
         // Join all text content from the response
         return content.compactMap { block -> String? in
-            if case .text(let text) = block {
+            if case .text(let text, _) = block {
                 return text
             }
             return nil

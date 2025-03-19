@@ -196,7 +196,7 @@ struct ContentView: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 Text(isDescribingImages 
-                     ? "OCR extracts text from screenshots. If API key is set, Claude will also summarize the text."
+                     ? "OCR extracts text from screenshots. Claude creates flashcards from the text."
                      : "Screenshots saved as base64 in JSON")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -309,7 +309,7 @@ struct APITestView: View {
     
     private func testPackage() {
         // Test creation of SwiftAnthropic types
-        _ = Model.claude3Sonnet
+        _ = Model.claude37Sonnet
         let content: MessageParameter.Message.Content = .text("Test")
         _ = MessageParameter.Message(role: .user, content: content)
         
@@ -332,7 +332,7 @@ struct APITestView: View {
         let content: MessageParameter.Message.Content = .text("Hello, this is a test message. Please respond with 'API is working!'")
         let messageParam = MessageParameter.Message(role: .user, content: content)
         let parameters = MessageParameter(
-            model: Model.claude3Sonnet,
+            model: Model.claude37Sonnet,
             messages: [messageParam],
             maxTokens: 100
         )
@@ -345,7 +345,7 @@ struct APITestView: View {
                 // Extract text from response
                 let content = response.content
                 let responseText = content.compactMap { block -> String? in
-                    if case .text(let text) = block {
+                    if case .text(let text, _) = block {
                         return text
                     }
                     return nil
