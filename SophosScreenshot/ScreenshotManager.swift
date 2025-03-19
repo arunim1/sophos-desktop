@@ -161,7 +161,25 @@ class AnthropicAPI {
 
 class ScreenshotManager: NSObject, ObservableObject {
     private var image: NSImage?
-    private let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    // Path for saving files - use iCloud container if available, otherwise fall back to Documents directory
+    private var savePath: URL {
+        // Try to get the iCloud container URL
+        if let iCloudContainerURL = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appendingPathComponent("Documents") {
+            // Create the directory if it doesn't exist
+            if !FileManager.default.fileExists(atPath: iCloudContainerURL.path) {
+                do {
+                    try FileManager.default.createDirectory(at: iCloudContainerURL, withIntermediateDirectories: true, attributes: nil)
+                    print("Created iCloud Documents directory at: \(iCloudContainerURL.path)")
+                } catch {
+                    print("Error creating iCloud Documents directory: \(error)")
+                }
+            }
+            return iCloudContainerURL
+        } else {
+            // Fall back to local Documents directory if iCloud is not available
+            return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        }
+    }
     @Published var isProcessing = false
     @Published var lastDescription: String?
     
@@ -433,7 +451,7 @@ class ScreenshotManager: NSObject, ObservableObject {
     private func saveJsonToFile(_ json: [String: Any], filename: String) {
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
-            let fileURL = documentsPath.appendingPathComponent(filename)
+            let fileURL = savePath.appendingPathComponent(filename)
             
             print("Saving individual JSON file to: \(fileURL.path)")
             
@@ -512,19 +530,19 @@ class ScreenshotManager: NSObject, ObservableObject {
             // Generate filename with timestamp
             let timestamp = Int(Date().timeIntervalSince1970)
             let filename = "\(prefix)_\(timestamp).json"
-            let fileURL = documentsPath.appendingPathComponent(filename)
+            let fileURL = savePath.appendingPathComponent(filename)
             
             print("Trying to save JSON file to: \(fileURL.path)")
-            print("Documents path is: \(documentsPath.path)")
+            print("Save path is: \(savePath.path)")
             
             // Verify the directory exists
-            if FileManager.default.fileExists(atPath: documentsPath.path) {
-                print("Documents directory exists")
+            if FileManager.default.fileExists(atPath: savePath.path) {
+                print("Save directory exists")
             } else {
-                print("WARNING: Documents directory doesn't exist at \(documentsPath.path)")
+                print("WARNING: Save directory doesn't exist at \(savePath.path)")
                 // Try to create it
-                try FileManager.default.createDirectory(at: documentsPath, withIntermediateDirectories: true)
-                print("Created documents directory")
+                try FileManager.default.createDirectory(at: savePath, withIntermediateDirectories: true)
+                print("Created save directory")
             }
             
             try jsonData.write(to: fileURL)

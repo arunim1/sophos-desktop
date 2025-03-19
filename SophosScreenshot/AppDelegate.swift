@@ -143,7 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Register global shortcut
         registerGlobalShortcut()
         
-        // Test documents folder access
+        // Test save location access (iCloud or Documents)
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         print("Documents path: \(documentsPath.path)")
         
@@ -151,6 +151,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("Documents folder exists and is accessible")
         } else {
             print("WARNING: Documents folder doesn't exist or isn't accessible")
+        }
+        
+        // Check iCloud availability
+        if let iCloudContainerURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) {
+            print("iCloud is available at: \(iCloudContainerURL.path)")
+            
+            // Create Documents directory in iCloud if it doesn't exist
+            let iCloudDocumentsURL = iCloudContainerURL.appendingPathComponent("Documents")
+            if !FileManager.default.fileExists(atPath: iCloudDocumentsURL.path) {
+                do {
+                    try FileManager.default.createDirectory(at: iCloudDocumentsURL, withIntermediateDirectories: true, attributes: nil)
+                    print("Created iCloud Documents directory at: \(iCloudDocumentsURL.path)")
+                } catch {
+                    print("Error creating iCloud Documents directory: \(error)")
+                }
+            }
+        } else {
+            print("iCloud is not available, will use local Documents directory instead")
         }
     }
     

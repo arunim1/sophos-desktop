@@ -185,9 +185,9 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
                 
                 HStack {
-                    Image(systemName: "info.circle")
+                    Image(systemName: "icloud")
                         .foregroundColor(.blue)
-                    Text("Files saved to Documents folder")
+                    Text("Files saved to iCloud Drive (or Documents if iCloud unavailable)")
                         .font(.caption)
                 }
             }
