@@ -4,6 +4,73 @@ import UserNotifications
 import SwiftUI
 import Security
 import Vision
+import SwiftAnthropic
+
+// Local implementation of AnthropicAPI to avoid scope issues
+class AnthropicAPI {
+    static let shared = AnthropicAPI()
+    
+    // Summarize text using the Claude API
+    func summarizeText(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
+        print("AnthropicAPI.summarizeText called with \(text.count) characters")
+        
+        // Input validation
+        guard !text.isEmpty else {
+            completion(.failure(NSError(domain: "com.sophos.screenshot", code: 1, userInfo: [NSLocalizedDescriptionKey: "Empty input"])))
+            return
+        }
+        
+        // Get API key from UserDefaults
+        guard let apiKey = UserDefaults.standard.string(forKey: "anthropic_api_key"), !apiKey.isEmpty else {
+            completion(.failure(NSError(domain: "com.sophos.screenshot", code: 2, userInfo: [NSLocalizedDescriptionKey: "API key is missing or empty"])))
+            return
+        }
+        
+        // Create service
+        let service = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
+        
+        // Create message content
+        let content: MessageParameter.Message.Content = .text(
+            "This is text extracted from a screenshot using OCR. Please summarize it concisely:\n\n\(text)"
+        )
+        
+        // Create message parameters
+        let messageParam = MessageParameter.Message(role: .user, content: content)
+        let parameters = MessageParameter(
+            model: Model.claude3Sonnet,
+            messages: [messageParam],
+            maxTokens: 1024
+        )
+        
+        // Make API request
+        print("Sending summarization request to Anthropic API...")
+        Task {
+            do {
+                let response = try await service.createMessage(parameters)
+                
+                // Extract text from response
+                let content = response.content
+                let summary = content.compactMap { block -> String? in
+                    if case .text(let text) = block {
+                        return text
+                    }
+                    return nil
+                }.joined(separator: "\n")
+                
+                if !summary.isEmpty {
+                    print("Summarization successful: \(summary.prefix(50))...")
+                    completion(.success(summary))
+                } else {
+                    print("API ERROR: No text content in response")
+                    completion(.failure(NSError(domain: "com.sophos.screenshot", code: 3, userInfo: [NSLocalizedDescriptionKey: "No text content received from API"])))
+                }
+            } catch {
+                print("API ERROR: \(error.localizedDescription)")
+                completion(.failure(error))
+            }
+        }
+    }
+}
 
 class ScreenshotManager: NSObject, ObservableObject {
     private var image: NSImage?
@@ -106,7 +173,7 @@ class ScreenshotManager: NSObject, ObservableObject {
             guard let self = self else { return }
             
             // Process the results on the main queue
-            DispatchQueue.main.async {
+            DispatchQueue.main.async(execute: DispatchWorkItem {
                 if let error = error {
                     print("Vision OCR error: \(error.localizedDescription)")
                     self.saveImageAsJson(image)
@@ -148,10 +215,10 @@ class ScreenshotManager: NSObject, ObservableObject {
                         self.showNotification("Text recognized. Summarizing with Claude...")
                         
                         // Then send to Claude for summarization
-                        AnthropicAPI.shared.summarizeText(recognizedText) { [weak self] result in
+                        AnthropicAPI.shared.summarizeText(recognizedText) { [weak self] (result: Result<String, Error>) in
                             guard let self = self else { return }
                             
-                            DispatchQueue.main.async {
+                            DispatchQueue.main.async(execute: DispatchWorkItem {
                                 switch result {
                                 case .success(let summary):
                                     // Save both OCR text and summary
@@ -162,7 +229,7 @@ class ScreenshotManager: NSObject, ObservableObject {
                                     self.showNotification("OCR text saved. Summarization failed.")
                                 }
                                 self.isProcessing = false
-                            }
+                            })
                         }
                     } else {
                         // Just save the OCR results without summarization
@@ -171,13 +238,13 @@ class ScreenshotManager: NSObject, ObservableObject {
                         self.isProcessing = false
                     }
                 }
-            }
+            })
         }
         
         // Configure the request:
         // .accurate for better quality but slower processing
         // .fast for quicker results with potential lower accuracy
-        request.recognitionLevel = .accurate
+        request.recognitionLevel = VNRequestTextRecognitionLevel.accurate
         
         // You can also set specific languages if needed
         // request.recognitionLanguages = ["en-US", "fr-FR"]
@@ -193,11 +260,11 @@ class ScreenshotManager: NSObject, ObservableObject {
             print("Vision request performed successfully")
         } catch {
             print("Failed to perform Vision request: \(error)")
-            DispatchQueue.main.async {
+            DispatchQueue.main.async(execute: DispatchWorkItem {
                 self.saveImageAsJson(image)
                 self.showNotification("OCR processing failed: \(error.localizedDescription)")
                 self.isProcessing = false
-            }
+            })
         }
     }
     

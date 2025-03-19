@@ -1,5 +1,6 @@
 import SwiftUI
 import Security
+import SwiftAnthropic
 
 // KeychainManager for ContentView to store API key for future use
 class KeychainManager {
@@ -79,6 +80,7 @@ struct ContentView: View {
     @State private var showingAPIKeyField = false
     @State private var apiKeyStatus = ""
     @State private var isDescribingImages = UserDefaults.standard.bool(forKey: "useDescriptionAPI")
+    @State private var showingAPITestView = false
     
     private var savedAPIKey: String? {
         KeychainManager.shared.getAPIKey()
@@ -201,6 +203,13 @@ struct ContentView: View {
             }
             .padding(.horizontal)
             
+            Divider()
+            
+            Button("Test Anthropic API") {
+                showingAPITestView = true
+            }
+            .buttonStyle(.borderedProminent)
+            
             Spacer()
         }
         .frame(width: 300, height: 400)
@@ -208,6 +217,144 @@ struct ContentView: View {
         .onAppear {
             // Check if we need to show the API key field
             showingAPIKeyField = savedAPIKey == nil && isDescribingImages
+        }
+        .sheet(isPresented: $showingAPITestView) {
+            APITestView()
+        }
+    }
+}
+
+// Simple API Test View for debugging
+struct APITestView: View {
+    @State private var apiStatus: String = "Not tested"
+    @State private var apiResponse: String = ""
+    @State private var isLoading: Bool = false
+    @State private var testApiKey: String = ""
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Anthropic API Test")
+                .font(.headline)
+            
+            HStack {
+                #if os(macOS)
+                PasteEnabledSecureField("Enter API Key", text: $testApiKey)
+                    .frame(height: 30)
+                #else
+                SecureField("Enter API Key", text: $testApiKey)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                #endif
+                
+                Button("Save Key") {
+                    UserDefaults.standard.set(testApiKey, forKey: "anthropic_api_key")
+                    apiStatus = "API key saved to UserDefaults"
+                    testApiKey = ""
+                }
+                .disabled(testApiKey.isEmpty)
+            }
+            
+            HStack {
+                Button("Test API Key") {
+                    testAPIKey()
+                }
+                
+                Button("Test Package") {
+                    testPackage()
+                }
+                
+                Button("Test API Call") {
+                    testAPICall()
+                }
+                .disabled(isLoading)
+            }
+            
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+            }
+            
+            Text("Status: \(apiStatus)")
+                .foregroundColor(apiStatus.contains("SUCCESS") ? .green : (apiStatus.contains("ERROR") ? .red : .primary))
+            
+            ScrollView {
+                Text(apiResponse)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .frame(height: 200)
+        }
+        .padding()
+        .frame(width: 500, height: 400)
+    }
+    
+    private func testAPIKey() {
+        let key = UserDefaults.standard.string(forKey: "anthropic_api_key") ?? "Not found"
+        let masked = key.count > 8 ? String(key.prefix(4)) + "..." + String(key.suffix(4)) : key
+        apiStatus = key != "Not found" ? "SUCCESS: Found key \(masked)" : "ERROR: No API key found"
+        apiResponse = "API key check complete"
+    }
+    
+    private func testPackage() {
+        // Test creation of SwiftAnthropic types
+        _ = Model.claude3Sonnet
+        let content: MessageParameter.Message.Content = .text("Test")
+        _ = MessageParameter.Message(role: .user, content: content)
+        
+        apiStatus = "SUCCESS: SwiftAnthropic package is working"
+        apiResponse = "Successfully created Anthropic types"
+    }
+    
+    private func testAPICall() {
+        guard let apiKey = UserDefaults.standard.string(forKey: "anthropic_api_key"), !apiKey.isEmpty else {
+            apiStatus = "ERROR: No API key found"
+            apiResponse = "Please save an API key first"
+            return
+        }
+        
+        isLoading = true
+        apiStatus = "Making API call..."
+        
+        // Create simple service and request
+        let service = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
+        let content: MessageParameter.Message.Content = .text("Hello, this is a test message. Please respond with 'API is working!'")
+        let messageParam = MessageParameter.Message(role: .user, content: content)
+        let parameters = MessageParameter(
+            model: Model.claude3Sonnet,
+            messages: [messageParam],
+            maxTokens: 100
+        )
+        
+        // Make API call
+        Task {
+            do {
+                let response = try await service.createMessage(parameters)
+                
+                // Extract text from response
+                let content = response.content
+                let responseText = content.compactMap { block -> String? in
+                    if case .text(let text) = block {
+                        return text
+                    }
+                    return nil
+                }.joined(separator: "\n")
+                
+                // Use a default message if no text was found
+                let finalResponse = responseText.isEmpty ? "No text content in response" : responseText
+                
+                DispatchQueue.main.async(execute: DispatchWorkItem {
+                    isLoading = false
+                    apiStatus = "SUCCESS: API call completed"
+                    apiResponse = "Response: \(finalResponse)"
+                })
+            } catch {
+                DispatchQueue.main.async(execute: DispatchWorkItem {
+                    isLoading = false
+                    apiStatus = "ERROR: \(error.localizedDescription)"
+                    apiResponse = "Full error: \(error)"
+                })
+            }
         }
     }
 }
