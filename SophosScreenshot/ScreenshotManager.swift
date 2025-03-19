@@ -58,7 +58,11 @@ class AnthropicAPI {
                 }.joined(separator: "\n")
                 
                 if !summary.isEmpty {
-                    print("Summarization successful: \(summary.prefix(50))...")
+                    print("===============================")
+                    print("CLAUDE SUMMARIZATION SUCCESSFUL")
+                    print("Summary length: \(summary.count) characters")
+                    print("Summary preview: \(summary.prefix(50))...")
+                    print("===============================")
                     completion(.success(summary))
                 } else {
                     print("API ERROR: No text content in response")
@@ -221,9 +225,11 @@ class ScreenshotManager: NSObject, ObservableObject {
                             DispatchQueue.main.async(execute: DispatchWorkItem {
                                 switch result {
                                 case .success(let summary):
+                                    print("SUCCESS: Claude API returned summary")
+                                    print("Summary length: \(summary.count) characters")
                                     // Save both OCR text and summary
                                     self.saveSummaryAsJson(image, recognizedText, summary)
-                                    self.showNotification("Text summarized by Claude!")
+                                    self.showNotification("Text summarized by Claude and saved to JSON!")
                                 case .failure(let error):
                                     print("Failed to summarize: \(error.localizedDescription)")
                                     self.showNotification("OCR text saved. Summarization failed.")
@@ -296,6 +302,9 @@ class ScreenshotManager: NSObject, ObservableObject {
     }
     
     private func saveSummaryAsJson(_ image: NSImage, _ originalText: String, _ summary: String) {
+        print("SAVING CLAUDE SUMMARY - Length: \(summary.count) characters")
+        print("Summary preview: \(summary.prefix(100))...")
+        
         // Create JSON dictionary with both OCR text and Claude's summary
         let json: [String: Any] = [
             "timestamp": Date().timeIntervalSince1970,
@@ -309,8 +318,13 @@ class ScreenshotManager: NSObject, ObservableObject {
     }
     
     private func saveJson(_ json: [String: Any], prefix: String) {
+        print("====== SAVING JSON FILE ======")
+        print("File type: \(prefix)")
+        print("Keys in JSON: \(json.keys.joined(separator: ", "))")
+        
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+            print("JSON serialized successfully, size: \(jsonData.count) bytes")
             
             // Generate filename with timestamp
             let timestamp = Int(Date().timeIntervalSince1970)
