@@ -1,13 +1,14 @@
 import Foundation
 import Security
 import SwiftAnthropic
+import Cocoa
 
 class AnthropicAPI {
     static let shared = AnthropicAPI()
     
-    private let model = Model.claude37Sonnet 
+    private let model = Model.claude3Sonnet 
     private let maxTokens = 2048
-    private var service: AnthropicServiceProtocol?
+    private var service: AnthropicService?
     
     private func getAPIKey() -> String? {
         print("Attempting to retrieve API key from keychain")
@@ -73,12 +74,12 @@ class AnthropicAPI {
         
         // Initialize Anthropic service
         if service == nil {
-            service = AnthropicServiceFactory.service(apiKey: apiKey)
+            service = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
             print("Initialized Anthropic service with API key")
         }
         
         // Get the prompt template from prompt.txt
-        guard let promptTemplate = loadPromptTemplate() else {
+        guard let promptTemplate = PromptTemplateLoader.loadPromptTemplate() else {
             print("ERROR: Could not load prompt template")
             completion(.failure(APIError.invalidPrompt))
             return
@@ -146,22 +147,7 @@ class AnthropicAPI {
         }.joined(separator: "\n")
     }
     
-    private func loadPromptTemplate() -> String? {
-        // Get the path to prompt.txt
-        guard let path = Bundle.main.path(forResource: "prompt", ofType: "txt") else {
-            print("ERROR: Could not find prompt.txt in the bundle")
-            return nil
-        }
-        
-        do {
-            // Read the content of the file
-            let promptTemplate = try String(contentsOfFile: path, encoding: .utf8)
-            return promptTemplate
-        } catch {
-            print("ERROR: Could not read prompt.txt: \(error)")
-            return nil
-        }
-    }
+    // Using the static method from ScreenshotManager instead
     
     // Extract flashcards from Claude's response
     private func extractFlashcards(from response: String) -> [[String: String]] {
@@ -169,13 +155,13 @@ class AnthropicAPI {
         
         // First, clean the response by removing any <thinking> sections
         var cleanedResponse = response
-        if let thinkingRange = response.range(of: "<thinking>[\s\S]*?</thinking>", options: .regularExpression) {
+        if let thinkingRange = response.range(of: "<thinking>[\\s\\S]*?</thinking>", options: .regularExpression) {
             cleanedResponse = response.replacingCharacters(in: thinkingRange, with: "")
             print("Removed <thinking> section from Claude response")
         }
         
         // Also remove any other XML-like tags that aren't card-related
-        let nonCardPatterns = ["<flashcard_creation_process>[\s\S]*?</flashcard_creation_process>", "<response>[\s\S]*?</response>"]
+        let nonCardPatterns = ["<flashcard_creation_process>[\\s\\S]*?</flashcard_creation_process>", "<response>[\\s\\S]*?</response>"]
         for pattern in nonCardPatterns {
             if let range = cleanedResponse.range(of: pattern, options: .regularExpression) {
                 cleanedResponse = cleanedResponse.replacingCharacters(in: range, with: "")

@@ -5,91 +5,11 @@ import SwiftUI
 import Security
 import Vision
 import SwiftAnthropic
+import CoreGraphics
 
-// Local implementation of AnthropicAPI to avoid scope issues
-class AnthropicAPI {
-    static let shared = AnthropicAPI()
-    
-    // Create flashcards from OCR text using the Claude API
-    func createFlashcards(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
-        print("AnthropicAPI.createFlashcards called with \(text.count) characters")
-        
-        // Input validation
-        guard !text.isEmpty else {
-            completion(.failure(NSError(domain: "com.sophos.desktop", code: 1, userInfo: [NSLocalizedDescriptionKey: "Empty input"])))
-            return
-        }
-        
-        // Get API key from UserDefaults
-        guard let apiKey = UserDefaults.standard.string(forKey: "anthropic_api_key"), !apiKey.isEmpty else {
-            completion(.failure(NSError(domain: "com.sophos.desktop", code: 2, userInfo: [NSLocalizedDescriptionKey: "API key is missing or empty"])))
-            return
-        }
-        
-        // Get the prompt template from bundle
-        guard let promptTemplate = loadPromptTemplate() else {
-            completion(.failure(NSError(domain: "com.sophos.desktop", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not load prompt template"])))
-            return
-        }
-        
-        // Replace {{DESCRIPTION}} with the OCR text
-        let prompt = promptTemplate.replacingOccurrences(of: "{{DESCRIPTION}}", with: text)
-        
-        // Create service
-        let service = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
-        
-        // Create message content with the prompt
-        let content: MessageParameter.Message.Content = .text(prompt)
-        
-        // Create message parameters
-        let messageParam = MessageParameter.Message(role: .user, content: content)
-        let parameters = MessageParameter(
-            model: Model.claude3Sonnet,
-            messages: [messageParam],
-            maxTokens: 4096 // Increased for flashcard creation
-        )
-        
-        // Make API request
-        print("Sending flashcard creation request to Anthropic API...")
-        Task {
-            do {
-                let response = try await service.createMessage(parameters)
-                
-                // Extract text from response
-                let content = response.content
-                let responseText = content.compactMap { block -> String? in
-                    if case .text(let text) = block {
-                        return text
-                    }
-                    return nil
-                }.joined(separator: "\n")
-                
-                if !responseText.isEmpty {
-                    print("===============================")
-                    print("CLAUDE FLASHCARD CREATION SUCCESSFUL")
-                    print("Response length: \(responseText.count) characters")
-                    print("Response preview: \(responseText.prefix(50))...")
-                    print("===============================")
-                    
-                    // Parse the flashcards from the response
-                    let flashcards = extractFlashcards(from: responseText)
-                    
-                    // Convert flashcards to JSON
-                    let flashcardsJson = convertFlashcardsToJson(flashcards)
-                    
-                    completion(.success(flashcardsJson))
-                } else {
-                    print("API ERROR: No text content in response")
-                    completion(.failure(NSError(domain: "com.sophos.desktop", code: 3, userInfo: [NSLocalizedDescriptionKey: "No text content received from API"])))
-                }
-            } catch {
-                print("API ERROR: \(error.localizedDescription)")
-                completion(.failure(error))
-            }
-        }
-    }
-    
-    private func loadPromptTemplate() -> String? {
+// Define PromptTemplateLoader class for loading the prompt template
+class PromptTemplateLoader {
+    static func loadPromptTemplate() -> String? {
         // Get the path to prompt.txt
         guard let path = Bundle.main.path(forResource: "prompt", ofType: "txt") else {
             print("ERROR: Could not find prompt.txt in the bundle")
@@ -105,62 +25,12 @@ class AnthropicAPI {
             return nil
         }
     }
-    
-    // Extract flashcards from Claude's response
-    private func extractFlashcards(from response: String) -> [[String: String]] {
-        var flashcards: [[String: String]] = []
-        
-        // Pattern to match flashcard blocks in the response
-        let pattern = "<card>\\s*<type_of_card>(.*?)</type_of_card>\\s*<Front>(.*?)</Front>\\s*<Back>(.*?)</Back>\\s*</card>"
-        
-        do {
-            let regex = try NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
-            let nsString = response as NSString
-            let matches = regex.matches(in: response, options: [], range: NSRange(location: 0, length: nsString.length))
-            
-            for match in matches {
-                if match.numberOfRanges == 4 { // Full match + 3 capture groups
-                    let typeRange = match.range(at: 1)
-                    let frontRange = match.range(at: 2)
-                    let backRange = match.range(at: 3)
-                    
-                    let type = nsString.substring(with: typeRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                    let front = nsString.substring(with: frontRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                    let back = nsString.substring(with: backRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                    
-                    let flashcard: [String: String] = [
-                        "type": type,
-                        "front": front,
-                        "back": back
-                    ]
-                    
-                    flashcards.append(flashcard)
-                }
-            }
-        } catch {
-            print("ERROR: Failed to parse flashcards: \(error)")
-        }
-        
-        return flashcards
-    }
-    
-    // Convert flashcards array to JSON string
-    private func convertFlashcardsToJson(_ flashcards: [[String: String]]) -> String {
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: flashcards, options: .prettyPrinted)
-            if let jsonString = String(data: jsonData, encoding: .utf8) {
-                return jsonString
-            }
-        } catch {
-            print("ERROR: Failed to convert flashcards to JSON: \(error)")
-        }
-        
-        return "[]"
-    }
 }
 
 class ScreenshotManager: NSObject, ObservableObject {
     private var image: NSImage?
+    private var fullScreenImage: NSImage?
+    private var fullScreenOCRText: String?
     // Path for saving files - use iCloud container if available, otherwise fall back to Documents directory
     private var savePath: URL {
         // Try to get the iCloud container URL
@@ -188,6 +58,10 @@ class ScreenshotManager: NSObject, ObservableObject {
         return UserDefaults.standard.bool(forKey: "useDescriptionAPI")
     }
     
+    var captureFullScreenContext: Bool {
+        return UserDefaults.standard.bool(forKey: "captureFullScreenContext")
+    }
+    
     func setUseDescriptionAPI(_ value: Bool) {
         UserDefaults.standard.set(value, forKey: "useDescriptionAPI")
     }
@@ -197,6 +71,11 @@ class ScreenshotManager: NSObject, ObservableObject {
         // Hide the application before taking the screenshot
         NSApplication.shared.hide(nil)
         isProcessing = true
+        
+        // Capture full screen first if the option is enabled
+        if self.useDescriptionAPI && self.captureFullScreenContext {
+            self.captureFullScreen()
+        }
         
         // Give some time for the app to hide
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -256,6 +135,94 @@ class ScreenshotManager: NSObject, ObservableObject {
                 print("Error taking screenshot: \(error)")
                 self.isProcessing = false
             }
+        }
+    }
+    
+    private func captureFullScreen() {
+        print("Capturing full screen for context")
+        
+        // Capture all screens
+        if let fullScreenImage = self.takeFullScreenshot() {
+            self.fullScreenImage = fullScreenImage
+            
+            // Process the full screen image with OCR asynchronously
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                self.processFullScreenWithVisionOCR(fullScreenImage)
+            }
+        }
+    }
+    
+    private func takeFullScreenshot() -> NSImage? {
+        // Use CGWindowListCreateImage to capture all screens
+        guard let cgScreenImage = CGWindowListCreateImage(
+            .null,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            .bestResolution) else {
+            print("Failed to create screen image")
+            return nil
+        }
+        
+        // Convert CGImage to NSImage
+        let size = CGSize(width: cgScreenImage.width, height: cgScreenImage.height)
+        let image = NSImage(cgImage: cgScreenImage, size: size)
+        return image
+    }
+    
+    private func processFullScreenWithVisionOCR(_ image: NSImage) {
+        print("Processing full screen with Vision OCR")
+        
+        // Convert NSImage to CGImage for Vision processing
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            print("Failed to convert full screen NSImage to CGImage")
+            return
+        }
+        
+        // Create a Vision text recognition request
+        let request = VNRecognizeTextRequest { [weak self] (request, error) in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("Full screen Vision OCR error: \(error.localizedDescription)")
+                return
+            }
+            
+            // Get the text observations
+            guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                print("No text observations found in full screen")
+                return
+            }
+            
+            // Extract the text from the observations
+            var recognizedText = ""
+            let maximumCandidates = 1  // We only want the top candidate for each observation
+            
+            for observation in observations {
+                guard let candidate = observation.topCandidates(maximumCandidates).first else { continue }
+                recognizedText += candidate.string + "\n"
+            }
+            
+            if recognizedText.isEmpty {
+                print("No text recognized in full screen")
+            } else {
+                print("Full screen text recognized: \(recognizedText.count) characters")
+                self.fullScreenOCRText = recognizedText
+            }
+        }
+        
+        // Configure the request
+        request.recognitionLevel = VNRequestTextRecognitionLevel.accurate
+        request.usesLanguageCorrection = true
+        
+        // Create an image request handler and perform the request
+        let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        
+        do {
+            try requestHandler.perform([request])
+            print("Full screen Vision request performed successfully")
+        } catch {
+            print("Failed to perform full screen Vision request: \(error)")
         }
     }
     
@@ -319,8 +286,36 @@ class ScreenshotManager: NSObject, ObservableObject {
                         self.saveOCRTextAsJson(image, recognizedText)
                         self.showNotification("Text recognized. Creating flashcards with Claude...")
                         
+                        // Prepare the text to send to Claude
+                        var textToProcess = recognizedText
+                        
+                        // If full screen context is available and enabled, include it
+                        if self.captureFullScreenContext, let fullScreenText = self.fullScreenOCRText, !fullScreenText.isEmpty {
+                            print("Including full screen context in Claude API request")
+                            // Load the prompt template
+                            if let promptTemplate = PromptTemplateLoader.loadPromptTemplate() {
+                                // Check if the prompt template contains {{CONTEXT}} placeholder
+                                if promptTemplate.contains("{{CONTEXT}}") {
+                                    print("Found {{CONTEXT}} placeholder in prompt template")
+                                    // Replace {{CONTEXT}} with the full screen OCR text
+                                    textToProcess = promptTemplate.replacingOccurrences(of: "{{CONTEXT}}", with: fullScreenText)
+                                    // Then replace {{DESCRIPTION}} with the interactive screenshot OCR text
+                                    textToProcess = textToProcess.replacingOccurrences(of: "{{DESCRIPTION}}", with: recognizedText)
+                                    print("Added full screen context (\(fullScreenText.count) chars) to Claude request")
+                                } else {
+                                    print("No {{CONTEXT}} placeholder found in prompt template")
+                                    textToProcess = recognizedText
+                                }
+                            } else {
+                                print("Could not load prompt template, using only screenshot text")
+                                textToProcess = recognizedText
+                            }
+                        } else {
+                            print("No full screen context available or option disabled")
+                        }
+                        
                         // Then send to Claude for flashcard creation
-                        AnthropicAPI.shared.createFlashcards(recognizedText) { [weak self] (result: Result<String, Error>) in
+                        AnthropicAPI.shared.createFlashcards(textToProcess) { [weak self] (result: Result<String, Error>) in
                             guard let self = self else { return }
                             
                             DispatchQueue.main.async(execute: DispatchWorkItem {

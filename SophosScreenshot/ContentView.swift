@@ -81,6 +81,7 @@ struct ContentView: View {
     @State private var apiKeyStatus = ""
     @State private var isDescribingImages = UserDefaults.standard.bool(forKey: "useDescriptionAPI")
     @State private var showingAPITestView = false
+    @State private var captureFullScreenContext = UserDefaults.standard.bool(forKey: "captureFullScreenContext")
     
     private var savedAPIKey: String? {
         KeychainManager.shared.getAPIKey()
@@ -109,6 +110,22 @@ struct ContentView: View {
             // OCR Toggle removed from UI but functionality preserved
             // The value is still controlled by isDescribingImages state variable
             // which affects ScreenshotManager behavior
+            
+            // Full Screen Context Toggle
+            if isDescribingImages {
+                Toggle(isOn: $captureFullScreenContext) {
+                    HStack {
+                        Image(systemName: "rectangle.dashed")
+                            .foregroundColor(captureFullScreenContext ? .green : .gray)
+                        Text("Capture full screen as context")
+                            .font(.caption)
+                    }
+                }
+                .padding(.horizontal)
+                .onChange(of: captureFullScreenContext) { newValue in
+                    UserDefaults.standard.set(newValue, forKey: "captureFullScreenContext")
+                }
+            }
             
             // Only show API key UI if OCR is enabled (hidden control remains active)
             if isDescribingImages {
