@@ -6,7 +6,7 @@ import Cocoa
 class AnthropicAPI {
     static let shared = AnthropicAPI()
     
-    private let model = Model.claude3Sonnet 
+    private let model = Model.claude3Sonnet
     private let maxTokens = 2048
     private var service: AnthropicService?
     
@@ -41,7 +41,6 @@ class AnthropicAPI {
         } else if status == errSecItemNotFound {
             print("API Key not found in keychain")
             
-            // For testing only - REMOVE IN PRODUCTION
             // Check if there's a key in UserDefaults as a fallback
             if let fallbackKey = UserDefaults.standard.string(forKey: "anthropic_api_key") {
                 print("Found fallback API key in UserDefaults")
@@ -56,7 +55,7 @@ class AnthropicAPI {
     
     // Function to create flashcards from OCR text using Claude
     func createFlashcards(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
-        print("AnthropicAPI.createFlashcards called with \(text.count) characters")
+        print("AnthropicAPI.createFlashcards called with \(text.count) characters: \(text)")
         
         // Input validation
         guard !text.isEmpty else {

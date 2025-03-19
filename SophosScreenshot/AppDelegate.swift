@@ -127,7 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusBarItem.button {
-            button.image = NSImage(systemSymbolName: "function", accessibilityDescription: "Sophos Desktop")
+            button.image = NSImage(named: "MenuIcon") ?? NSImage(systemSymbolName: "camera", accessibilityDescription: "Sophos Desktop")
             button.action = #selector(togglePopover)
         }
         

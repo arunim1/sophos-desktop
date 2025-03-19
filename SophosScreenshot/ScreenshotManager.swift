@@ -297,8 +297,9 @@ class ScreenshotManager: NSObject, ObservableObject {
                                 // Check if the prompt template contains {{CONTEXT}} placeholder
                                 if promptTemplate.contains("{{CONTEXT}}") {
                                     print("Found {{CONTEXT}} placeholder in prompt template")
-                                    // Replace {{CONTEXT}} with the full screen OCR text
-                                    textToProcess = promptTemplate.replacingOccurrences(of: "{{CONTEXT}}", with: fullScreenText)
+                                    // Replace {{CONTEXT}} with the full screen OCR text wrapped
+                                    let wrappedContext = "Here's the full screen context that provides additional background information:\n<context>\n\(fullScreenText)\n</context>"
+                                    textToProcess = promptTemplate.replacingOccurrences(of: "{{CONTEXT}}", with: wrappedContext)
                                     // Then replace {{DESCRIPTION}} with the interactive screenshot OCR text
                                     textToProcess = textToProcess.replacingOccurrences(of: "{{DESCRIPTION}}", with: recognizedText)
                                     print("Added full screen context (\(fullScreenText.count) chars) to Claude request")

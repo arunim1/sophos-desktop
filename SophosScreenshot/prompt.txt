@@ -1,9 +1,6 @@
 You are an expert in creating effective Anki-style flashcards for spaced repetition learning. Your task is to analyze the following screenshot transcription and/or description and create a series of flashcards based on the information the user wants to capture and remember.
 
-Here's the full screen context that provides additional background information:
-<context>
 {{CONTEXT}}
-</context>
 
 Here's the transcription and/or description of the specific screenshot:
 <description>

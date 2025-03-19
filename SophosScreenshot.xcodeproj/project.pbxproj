@@ -8,8 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		6CAD13DB2D8A84F5001126F0 /* SwiftAnthropic in Frameworks */ = {isa = PBXBuildFile; productRef = 6CAD13DA2D8A84F5001126F0 /* SwiftAnthropic */; };
-		6CAD13DD2D8AB3C1001126F0 /* prompt.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6CAD13DC2D8AB3C1001126F0 /* prompt.txt */; };
 		6CAD13E02D8ABF29001126F0 /* AnthropicAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CAD13DF2D8ABF29001126F0 /* AnthropicAPI.swift */; };
+		6CAD13E42D8AC74C001126F0 /* prompt.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6CAD13E32D8AC74C001126F0 /* prompt.txt */; };
 		8A1234561234567800000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A1234561234567800000010 /* AppDelegate.swift */; };
 		8A1234561234567800000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A1234561234567800000011 /* ContentView.swift */; };
 		8A1234561234567800000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8A1234561234567800000012 /* Assets.xcassets */; };
@@ -21,6 +21,7 @@
 		6CAD13DC2D8AB3C1001126F0 /* prompt.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = prompt.txt; sourceTree = "<group>"; };
 		6CAD13DE2D8AB90C001126F0 /* SophosScreenshot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SophosScreenshot.entitlements; sourceTree = "<group>"; };
 		6CAD13DF2D8ABF29001126F0 /* AnthropicAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicAPI.swift; sourceTree = "<group>"; };
+		6CAD13E32D8AC74C001126F0 /* prompt.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = prompt.txt; sourceTree = "<group>"; };
 		8A1234561234567800000009 /* SophosScreenshot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SophosScreenshot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A1234561234567800000010 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		8A1234561234567800000011 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -54,6 +55,7 @@
 		8A1234561234567800000008 /* SophosScreenshot */ = {
 			isa = PBXGroup;
 			children = (
+				6CAD13E32D8AC74C001126F0 /* prompt.txt */,
 				6CAD13DF2D8ABF29001126F0 /* AnthropicAPI.swift */,
 				6CAD13DE2D8AB90C001126F0 /* SophosScreenshot.entitlements */,
 				8A1234561234567800000010 /* AppDelegate.swift */,
@@ -134,7 +136,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6CAD13DD2D8AB3C1001126F0 /* prompt.txt in Resources */,
+				6CAD13E42D8AC74C001126F0 /* prompt.txt in Resources */,
 				8A1234561234567800000003 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
