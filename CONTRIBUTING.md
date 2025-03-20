@@ -1,6 +1,6 @@
-# Contributing to SophosScreenshot
+# Contributing to SophosDesktop
 
-Thank you for your interest in contributing to SophosScreenshot! This document provides guidelines and instructions for contributing to this project.
+Thank you for your interest in contributing to SophosDesktop! This document provides guidelines and instructions for contributing to this project.
 
 ## Code of Conduct
 

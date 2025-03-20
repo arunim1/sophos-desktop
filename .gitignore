@@ -24,7 +24,7 @@ Package.resolved
 *.xcodeproj
 
 # Except for the main project file
-!SophosScreenshot.xcodeproj
+!SophosDesktop.xcodeproj
 
 .build/
 

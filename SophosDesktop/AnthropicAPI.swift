@@ -15,7 +15,7 @@ class AnthropicAPI {
         
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.sophos.screenshot",
+            kSecAttrService as String: "com.sophoscards.app",
             kSecAttrAccount as String: "anthropic_api_key",
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne

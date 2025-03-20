@@ -1,4 +1,4 @@
-# SophosScreenshot
+# SophosDesktop
 
 A macOS menubar application for capturing screenshots with Anthropic Claude AI integration. The app uses OCR to extract text from screenshots and then generates flashcards using Claude's API.
 
@@ -27,7 +27,7 @@ A macOS menubar application for capturing screenshots with Anthropic Claude AI i
 ## Installation
 
 1. Clone this repository
-2. Open `SophosScreenshot.xcodeproj` in Xcode
+2. Open `SophosDesktop.xcodeproj` in Xcode
 3. Build and run the project
 
 ## Requirements
