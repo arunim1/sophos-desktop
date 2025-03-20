@@ -6,7 +6,7 @@ import SwiftAnthropic
 class KeychainManager {
     static let shared = KeychainManager()
     
-    private let service = "com.sophos.desktop"
+    private let service = "com.sophoscards.app"
     private let account = "anthropic_api_key"
     
     func saveAPIKey(_ apiKey: String) -> Bool {
@@ -133,7 +133,7 @@ struct ContentView: View {
                 HStack {
                     Image(systemName: "key.fill")
                         .foregroundColor(savedAPIKey != nil ? .green : .gray)
-                    Text("Claude API Key: " + (savedAPIKey != nil ? "Configured ✓" : "Not Set"))
+                    Text("API Key Status: " + (savedAPIKey != nil ? "Configured ✓" : "Not Set"))
                         .font(.caption)
                     Button(savedAPIKey != nil ? "Change" : "Set") {
                         showingAPIKeyField = true
@@ -145,8 +145,19 @@ struct ContentView: View {
                 
                 if showingAPIKeyField {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Claude API Key:")
-                            .font(.caption)
+                        HStack(spacing: 0) {
+                            Text("Anthropic API Key (get ")
+                            Text("here")
+                                .foregroundColor(.blue)
+                                .underline()
+                                .onTapGesture {
+                                    if let url = URL(string: "https://console.anthropic.com/settings/keys") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                            Text("):")
+                        }
+                        .font(.caption)
                         
                         // Use a direct NSSecureTextField wrapper for better paste support
                         #if os(macOS)

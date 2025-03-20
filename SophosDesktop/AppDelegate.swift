@@ -4,6 +4,36 @@ import Carbon
 import Security
 import UserNotifications
 
+// MARK: - NSImage Extension for Rotation
+extension NSImage {
+    func rotated(by degrees: CGFloat) -> NSImage? {
+        // Swap width and height for a 90° rotation
+        let newSize = NSSize(width: self.size.height, height: self.size.width)
+        let rotatedImage = NSImage(size: newSize)
+        
+        rotatedImage.lockFocus()
+        
+        // Set up an affine transform to rotate the image
+        let transform = NSAffineTransform()
+        transform.translateX(by: newSize.width / 2, yBy: newSize.height / 2)
+        transform.rotate(byDegrees: degrees)
+        transform.translateX(by: -self.size.width / 2, yBy: -self.size.height / 2)
+        transform.concat()
+        
+        // Draw the original image into the transformed context
+        self.draw(at: NSZeroPoint,
+                  from: NSRect(origin: .zero, size: self.size),
+                  operation: .copy,
+                  fraction: 1.0)
+        
+        rotatedImage.unlockFocus()
+        // Set the template property to true to preserve system-color awareness
+        rotatedImage.isTemplate = true
+        return rotatedImage
+    }
+}
+
+
 // Carbon-based HotKey implementation for global shortcuts
 class HotKey {
     private var hotKeyRef: EventHotKeyRef?
@@ -122,14 +152,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("Notification permission error: \(error.localizedDescription)")
             }
         }
+
+        
         
         // Set up the menu bar item
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusBarItem.button {
-            button.image = NSImage(named: "MenuIcon") ?? NSImage(systemSymbolName: "camera", accessibilityDescription: "Sophos Desktop")
+            // Attempt to load the SF Symbol and rotate it by 90°
+            if let image = NSImage(systemSymbolName: "point.topleft.down.to.point.bottomright.curvepath",
+                                accessibilityDescription: "Custom rotated curve path"),
+            let rotatedImage = image.rotated(by: -90) {
+                button.image = rotatedImage
+            } else {
+                // Fallback image if symbol or rotation fails
+                button.image = NSImage(named: "MenuIcon") ?? NSImage(systemSymbolName: "camera", accessibilityDescription: "Sophos Desktop")
+            }
             button.action = #selector(togglePopover)
         }
+
         
         // Set up the popover
         popover = NSPopover()

@@ -94,6 +94,16 @@ The app creates several types of JSON files:
 - Uses UNUserNotificationCenter for notifications
 - Supports iCloud Drive for file storage
 
+## TODOs
+
+- [ ] Continuous Prompt Improvement
+- [ ] UUID for each flashcard 
+- [ ] Feature: Support for conversion to Anki
+- [ ] Temporary iCloud Storage (clear once saved to Anki / iPhone App)
+- [ ] Feature: Current context upload
+- [ ] Feature: Memory / instructions
+- [ ] iPhone App, eventually at https://github.com/arunim1/SophosMobile
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
